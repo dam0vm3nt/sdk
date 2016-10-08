@@ -31,9 +31,9 @@ vars = {
   "co19_rev": "@d4767b4caea3c5828ad8e053cd051d44a59061af",
 
   # Revisions of GN related dependencies.
-  "buildtools_revision": "@3d2e47bf14e4e67816a53e304dea422fa18f9180",
+  "buildtools_revision": "@39b1db2ab4aa4b2ccaa263c29bdf63e7c1ee28aa",
 
-  "gperftools_revision": "@7822b5b0b9fa7e016e1f6b46ea86f26f4691a457",
+  "gperftools_revision": "@02eeed29df112728564a5dde6417fa4622b57a06",
 
   # Revisions of /third_party/* dependencies.
   "args_tag": "@0.13.5",
@@ -54,10 +54,10 @@ vars = {
   "convert_tag": "@2.0.1",
   "crypto_tag" : "@2.0.1",
   "csslib_tag" : "@0.13.2",
-  "dart2js_info_tag" : "@0.3.0",
+  "dart2js_info_tag" : "@0.5.0",
   "dart_services_rev" : "@7aea2574e6f3924bf409a80afb8ad52aa2be4f97",
   "dart_style_tag": "@0.2.10",
-  "dartdoc_tag" : "@v0.9.7+4",
+  "dartdoc_tag" : "@v0.9.7+6",
   "fixnum_tag": "@0.10.5",
   "func_tag": "@0.1.0",
   "glob_tag": "@1.1.3",
@@ -110,7 +110,7 @@ vars = {
   "stream_channel_tag": "@1.5.0",
   "string_scanner_tag": "@1.0.0",
   "sunflower_rev": "@879b704933413414679396b129f5dfa96f7a0b1e",
-  "test_reflective_loader_tag": "@0.0.4",
+  "test_reflective_loader_tag": "@0.1.0",
   "test_tag": "@0.12.15+6",
   "typed_data_tag": "@1.1.3",
   "usage_tag": "@v2.2.2",

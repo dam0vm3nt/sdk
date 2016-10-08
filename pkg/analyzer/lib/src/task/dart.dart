@@ -1510,6 +1510,7 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
     LibraryIdentifier libraryNameNode = null;
     String partsLibraryName = _UNKNOWN_LIBRARY_NAME;
     bool hasPartDirective = false;
+    Set<Source> seenPartSources = new Set<Source>();
     FunctionElement entryPoint =
         _findEntryPoint(definingCompilationUnitElement);
     List<Directive> directivesToResolve = <Directive>[];
@@ -1532,6 +1533,17 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
           partElement.uriOffset = partUri.offset;
           partElement.uriEnd = partUri.end;
           partElement.uri = directive.uriContent;
+          //
+          // Validate that the part source is unique in the library.
+          //
+          if (!seenPartSources.add(partSource)) {
+            errors.add(new AnalysisError(
+                librarySource,
+                partUri.offset,
+                partUri.length,
+                CompileTimeErrorCode.DUPLICATE_PART,
+                [partSource.uri]));
+          }
           //
           // Validate that the part contains a part-of directive with the same
           // name as the library.
@@ -3237,12 +3249,10 @@ class GenerateLintsTask extends SourceBasedAnalysisTask {
     // Prepare inputs.
     //
     CompilationUnit unit = getRequiredInput(RESOLVED_UNIT_INPUT);
-
     //
     // Generate lints.
     //
     List<AstVisitor> visitors = <AstVisitor>[];
-
     bool timeVisits = analysisOptions.enableTiming;
     List<Linter> linters = getLints(context);
     int length = linters.length;
@@ -3257,10 +3267,9 @@ class GenerateLintsTask extends SourceBasedAnalysisTask {
         visitors.add(visitor);
       }
     }
-
-    DelegatingAstVisitor dv = new DelegatingAstVisitor(visitors);
-    unit.accept(dv);
-
+    AstVisitor visitor = new ExceptionHandlingDelegatingAstVisitor(
+        visitors, ExceptionHandlingDelegatingAstVisitor.logException);
+    unit.accept(visitor);
     //
     // Record outputs.
     //

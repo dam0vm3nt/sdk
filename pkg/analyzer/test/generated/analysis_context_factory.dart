@@ -27,7 +27,7 @@ import 'package:analyzer/src/generated/testing/test_type_provider.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
 import 'package:analyzer/src/source/source_resource.dart';
 import 'package:analyzer/src/string_source.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
 /**
  * The class `AnalysisContextFactory` defines utility methods used to create analysis contexts
@@ -501,7 +501,6 @@ class AnalysisContextHelper {
     if (options == null) {
       options = new AnalysisOptionsImpl();
     }
-    options.cacheSize = 256;
     context = AnalysisContextFactory.contextWithCoreAndOptions(options,
         resourceProvider: resourceProvider);
   }

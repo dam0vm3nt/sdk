@@ -6,17 +6,17 @@ library analyzer.test.generated.sdk_test;
 
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/sdk.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
 import '../src/context/mock_sdk.dart';
-import '../utils.dart';
 import 'test_support.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(DartSdkManagerTest);
-  defineReflectiveTests(SdkDescriptionTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(DartSdkManagerTest);
+    defineReflectiveTests(SdkDescriptionTest);
+  });
 }
 
 @reflectiveTest

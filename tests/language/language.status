@@ -5,9 +5,6 @@
 # This directory contains tests that are intended to show the
 # current state of the language.
 
-[ ($compiler == dart2app || $compiler == dart2appjit) ]
-string_literals_test: Skip # Issue 27433
-
 [ ($compiler == none || $compiler == precompiler || $compiler == dart2app || $compiler == dart2appjit) ]
 tearoff_constructor_basic_test: Skip # Crashes in checked mode -- hausner investigating
 generic_methods_type_expression_test: RuntimeError # Issue 25869
@@ -197,9 +194,6 @@ regress_22443_test: Skip
 ct_const2_test: Skip # Incompatible flag: --compile_all
 hello_dart_test: Skip # Incompatible flag: --compile_all
 
-[ $runtime == dart_app ]
-number_identity_test: RuntimeError # Issue 26873
-
 [ $compiler == precompiler ]
 implicit_closure_test: Skip # Incompatible flag: --use_slow_path
 deopt_inlined_function_lazy_test: Skip # Incompatible flag: --deoptimize-alot
@@ -241,11 +235,6 @@ library_env_test/has_no_mirror_support: RuntimeError, OK
 [ $noopt || $compiler == precompiler || $mode == product ]
 # The following tests are supposed to fail.
 library_env_test/has_mirror_support: RuntimeError, OK
-
-[ $arch == simdbc || $arch == simdbc64 ]
-# TODO(vegorov) Encoding limitation: StoreField bytecode only supports 256
-# fields in an object.
-large_class_declaration_test: Skip
 
 [ $compiler == precompiler && $runtime == dart_precompiled && $system == android ]
 vm/optimized_guarded_field_isolates_test: Skip # Issue #26373
@@ -299,3 +288,6 @@ assert_initializer_test/none: pass
 # The VM doesn't enforce that potentially const expressions are actually
 # const expressions when the constructor is called with `const`.
 assert_initializer_test/4*: MissingCompileTimeError # Issue 392.
+
+[$runtime == vm && $compiler == none]
+duplicate_part_test/01: MissingCompileTimeError # Issue 27516

@@ -31,8 +31,8 @@ import 'package:analyzer/task/dart.dart';
 import 'package:analyzer/task/general.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:html/dom.dart' show Document;
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 import 'package:watcher/src/utils.dart';
 
 import '../../generated/engine_test.dart';
@@ -41,9 +41,10 @@ import '../../utils.dart';
 import 'abstract_context.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(AnalysisContextImplTest);
-  defineReflectiveTests(LimitedInvalidateTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(AnalysisContextImplTest);
+    defineReflectiveTests(LimitedInvalidateTest);
+  });
 }
 
 @reflectiveTest
@@ -2537,12 +2538,10 @@ class ClassTwo {
 
   void test_setAnalysisOptions() {
     AnalysisOptionsImpl options = new AnalysisOptionsImpl();
-    options.cacheSize = 42;
     options.dart2jsHint = false;
     options.hint = false;
     context.analysisOptions = options;
     AnalysisOptions result = context.analysisOptions;
-    expect(result.cacheSize, options.cacheSize);
     expect(result.dart2jsHint, options.dart2jsHint);
     expect(result.hint, options.hint);
   }
@@ -2732,7 +2731,6 @@ int a = 0;''');
     int maxCacheSize = 4;
     AnalysisOptionsImpl options =
         new AnalysisOptionsImpl.from(context.analysisOptions);
-    options.cacheSize = maxCacheSize;
     context.analysisOptions = options;
     int sourceCount = maxCacheSize + 2;
     List<Source> sources = <Source>[];
