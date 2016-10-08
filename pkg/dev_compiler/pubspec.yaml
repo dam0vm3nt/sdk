@@ -6,6 +6,8 @@ description: >
 
 author: Dart Dev Compiler team <dev-compiler@dartlang.org>
 homepage: https://github.com/dart-lang/dev_compiler
+publish_to: "http://pub.drafintech.it:5001"
+
 
 dependencies:
   analyzer: ^0.29.0-alpha.0
