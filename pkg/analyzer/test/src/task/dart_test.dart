@@ -927,10 +927,13 @@ part 'part.dart';
   }
 
   test_perform_invalidUri_part() {
+    String invalidUri = resourceProvider.pathContext.separator == '/'
+        ? '//////////'
+        : '\\\\\\\\\\\\';
     _performBuildTask({
       '/lib.dart': '''
 library lib;
-part '//////////';
+part '$invalidUri';
 '''
     });
     expect(libraryElement.parts, isEmpty);
@@ -3376,7 +3379,9 @@ class B {}''');
 
   void _performParseTask(String content) {
     if (content == null) {
-      source = resourceProvider.getFile('/test.dart').createSource();
+      source = resourceProvider
+          .getFile(resourceProvider.convertPath('/test.dart'))
+          .createSource();
     } else {
       source = newSource('/test.dart', content);
     }

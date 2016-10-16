@@ -2783,7 +2783,6 @@ class LibraryPrefixSerializationCluster : public SerializationCluster {
       }
       s->Write<uint16_t>(prefix->ptr()->num_imports_);
       s->Write<bool>(prefix->ptr()->is_deferred_load_);
-      s->Write<bool>(prefix->ptr()->is_loaded_);
     }
   }
 
@@ -2825,7 +2824,7 @@ class LibraryPrefixDeserializationCluster : public DeserializationCluster {
       }
       prefix->ptr()->num_imports_ = d->Read<uint16_t>();
       prefix->ptr()->is_deferred_load_ = d->Read<bool>();
-      prefix->ptr()->is_loaded_ = d->Read<bool>();
+      prefix->ptr()->is_loaded_ = !prefix->ptr()->is_deferred_load_;
     }
   }
 };
@@ -5288,7 +5287,10 @@ void FullSnapshotWriter::WriteFullSnapshot() {
   WriteIsolateFullSnapshot(num_base_objects);
 
   if (Snapshot::IncludesCode(kind_)) {
-    instructions_writer_->Write();
+    instructions_writer_->Write(*vm_isolate_snapshot_buffer_,
+                                vm_isolate_snapshot_size_,
+                                *isolate_snapshot_buffer_,
+                                isolate_snapshot_size_);
 
     OS::Print("VMIsolate(CodeSize): %" Pd "\n", VmIsolateSnapshotSize());
     OS::Print("Isolate(CodeSize): %" Pd "\n", IsolateSnapshotSize());

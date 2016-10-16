@@ -1209,11 +1209,12 @@ RawObject* Simulator::Call(const Code& code,
       INVOKE_RUNTIME(DRT_OptimizeInvokedFunction, args);
       {
         // DRT_OptimizeInvokedFunction returns the code object to execute.
-        ASSERT(FP[1]->GetClassId() == kCodeCid);
-        RawCode* code = static_cast<RawCode*>(FP[1]);
+        ASSERT(FP[1]->GetClassId() == kFunctionCid);
+        RawFunction* function = static_cast<RawFunction*>(FP[1]);
+        RawCode* code = function->ptr()->code_;
         SimulatorHelpers::SetFrameCode(FP, code);
         pp = code->ptr()->object_pool_->ptr();
-        pc = reinterpret_cast<uint32_t*>(code->ptr()->entry_point_);
+        pc = reinterpret_cast<uint32_t*>(function->ptr()->entry_point_);
         pc_ = reinterpret_cast<uword>(pc);  // For the profiler.
       }
     }
@@ -2672,21 +2673,29 @@ RawObject* Simulator::Call(const Code& code,
   }
 
   {
-    BYTECODE(AssertAssignable, A_D);  // Stack: instance, type args, type, name
+    BYTECODE(BadTypeError, 0);  // Stack: instance, type args, type, name
     RawObject** args = SP - 3;
     if (args[0] != null_value) {
-      const AbstractType& dst_type =
-          AbstractType::Handle(static_cast<RawAbstractType*>(args[2]));
-      if (dst_type.IsMalformedOrMalbounded()) {
-        SP[1] = args[0];  // instance.
-        SP[2] = args[3];  // name.
-        SP[3] = args[2];  // type.
-        Exit(thread, FP, SP + 4, pc);
-        NativeArguments native_args(thread, 3, SP + 1, SP - 3);
-        INVOKE_RUNTIME(DRT_BadTypeError, native_args);
-        UNREACHABLE();
-      }
+      SP[1] = args[0];  // instance.
+      SP[2] = args[3];  // name.
+      SP[3] = args[2];  // type.
+      Exit(thread, FP, SP + 4, pc);
+      NativeArguments native_args(thread, 3, SP + 1, SP - 3);
+      INVOKE_RUNTIME(DRT_BadTypeError, native_args);
+      UNREACHABLE();
+    }
+    SP -= 3;
+    DISPATCH();
+  }
 
+  {
+    BYTECODE(AssertAssignable, A_D);  // Stack: instance, type args, type, name
+    RawObject** args = SP - 3;
+    const bool may_be_smi = (rA == 1);
+    const bool is_smi =
+        ((reinterpret_cast<intptr_t>(args[0]) & kSmiTagMask) == kSmiTag);
+    const bool smi_ok = is_smi && may_be_smi;
+    if (!smi_ok && (args[0] != null_value)) {
       RawSubtypeTestCache* cache =
           static_cast<RawSubtypeTestCache*>(LOAD_CONSTANT(rD));
       if (cache != null_value) {
@@ -2873,8 +2882,8 @@ RawObject* Simulator::Call(const Code& code,
           pc++;
           break;
         }
-        // The cids are sorted.
-        if (cid < desired_cid) {
+        // The cids are sorted in descending order.
+        if (cid > desired_cid) {
           break;
         }
       }

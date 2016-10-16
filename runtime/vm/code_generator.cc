@@ -1864,7 +1864,7 @@ DEFINE_RUNTIME_ENTRY(OptimizeInvokedFunction, 1) {
         ASSERT(isolate->background_compiler() != NULL);
         isolate->background_compiler()->CompileOptimized(function);
         // Continue in the same code.
-        arguments.SetReturn(Code::Handle(zone, function.CurrentCode()));
+        arguments.SetReturn(function);
         return;
       }
     }
@@ -1886,7 +1886,7 @@ DEFINE_RUNTIME_ENTRY(OptimizeInvokedFunction, 1) {
     const Code& optimized_code = Code::Handle(zone, function.CurrentCode());
     ASSERT(!optimized_code.IsNull());
   }
-  arguments.SetReturn(Code::Handle(zone, function.CurrentCode()));
+  arguments.SetReturn(function);
 #else
   UNREACHABLE();
 #endif  // !DART_PRECOMPILED_RUNTIME
@@ -1935,6 +1935,7 @@ DEFINE_RUNTIME_ENTRY(FixCallersTarget, 0) {
                  target_function.ToFullyQualifiedCString(),
                  current_target_code.UncheckedEntryPoint());
   }
+  ASSERT(!current_target_code.IsDisabled());
   arguments.SetReturn(current_target_code);
 }
 

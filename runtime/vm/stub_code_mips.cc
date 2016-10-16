@@ -2023,12 +2023,13 @@ void StubCode::GenerateOptimizeFunctionStub(Assembler* assembler) {
   __ sw(T0, Address(SP, 0 * kWordSize));
   __ CallRuntime(kOptimizeInvokedFunctionRuntimeEntry, 1);
   __ Comment("OptimizeFunctionStub return");
-  __ lw(CODE_REG, Address(SP, 1 * kWordSize));  // Get Code object
+  __ lw(T0, Address(SP, 1 * kWordSize));  // Get Function object
   __ lw(S4, Address(SP, 2 * kWordSize));  // Restore argument descriptor.
   __ addiu(SP, SP, Immediate(3 * kWordSize));  // Discard argument.
 
-  __ lw(T0, FieldAddress(CODE_REG, Code::entry_point_offset()));
-  __ LeaveStubFrameAndReturn(T0);
+  __ lw(CODE_REG, FieldAddress(T0, Function::code_offset()));
+  __ lw(T1, FieldAddress(T0, Function::entry_point_offset()));
+  __ LeaveStubFrameAndReturn(T1);
   __ break_(0);
 }
 
@@ -2371,6 +2372,7 @@ void StubCode::GenerateSingleTargetCallStub(Assembler* assembler) {
 // Called from the monomorphic checked entry.
 //  T0: receiver
 void StubCode::GenerateMonomorphicMissStub(Assembler* assembler) {
+  __ lw(CODE_REG, Address(THR, Thread::monomorphic_miss_stub_offset()));
   __ EnterStubFrame();
   __ Push(T0);  // Preserve receiver.
 

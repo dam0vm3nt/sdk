@@ -31,7 +31,7 @@ import 'package:analyzer/src/summary/summarize_elements.dart'
 import 'package:analyzer/src/summary/summary_sdk.dart';
 import 'package:analyzer/src/task/strong/ast_properties.dart'
     show isDynamicInvoke, setIsDynamicInvoke, getImplicitAssignmentCast;
-import 'package:path/path.dart' show separator;
+import 'package:path/path.dart' show separator, isWithin, fromUri;
 
 import '../closure/closure_annotator.dart' show ClosureAnnotator;
 import '../js_ast/js_ast.dart' as JS;
@@ -3890,7 +3890,9 @@ class CodeGenerator extends GeneralizingAstVisitor
       }
       var args = _visit(argumentList) as List<JS.Expression>;
       // Native factory constructors are JS constructors - use new here.
-      return isFactory && !isNative ? new JS.Call(ctor, args) : new JS.New(ctor, args);
+      return isFactory && !isNative
+          ? new JS.Call(ctor, args)
+          : new JS.New(ctor, args);
     }
 
     if (element != null && _isObjectLiteral(element.enclosingElement)) {
@@ -5450,16 +5452,17 @@ String jsLibraryName(String libraryRoot, LibraryElement library) {
     return uri.path;
   }
   // TODO(vsm): This is not necessarily unique if '__' appears in a file name.
-  var separator = '__';
+  var customSeparator = '__';
   String qualifiedPath;
   if (uri.scheme == 'package') {
     // Strip the package name.
     // TODO(vsm): This is not unique if an escaped '/'appears in a filename.
     // E.g., "foo/bar.dart" and "foo$47bar.dart" would collide.
-    qualifiedPath = uri.pathSegments.skip(1).join(separator);
-  } else if (uri.toFilePath().startsWith(libraryRoot)) {
-    qualifiedPath =
-        uri.path.substring(libraryRoot.length).replaceAll('/', separator);
+    qualifiedPath = uri.pathSegments.skip(1).join(customSeparator);
+  } else if (isWithin(libraryRoot, uri.toFilePath())) {
+    qualifiedPath = fromUri(uri)
+        .substring(libraryRoot.length)
+        .replaceAll(separator, customSeparator);
   } else {
     // We don't have a unique name.
     throw 'Invalid library root. $libraryRoot does not contain ${uri
