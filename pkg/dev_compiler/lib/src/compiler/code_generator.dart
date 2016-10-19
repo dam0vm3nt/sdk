@@ -31,7 +31,7 @@ import 'package:analyzer/src/summary/summarize_elements.dart'
 import 'package:analyzer/src/summary/summary_sdk.dart';
 import 'package:analyzer/src/task/strong/ast_properties.dart'
     show isDynamicInvoke, setIsDynamicInvoke, getImplicitAssignmentCast;
-import 'package:path/path.dart' show separator, isWithin, fromUri;
+import 'package:path/path.dart' show separator;
 
 import '../closure/closure_annotator.dart' show ClosureAnnotator;
 import '../js_ast/js_ast.dart' as JS;
@@ -625,7 +625,7 @@ class CodeGenerator extends GeneralizingAstVisitor
     if (node.type == null) {
       // TODO(jmesserly): if the type fails to resolve, should we generate code
       // that throws instead?
-      assert(options.unsafeForceCompile);
+      assert(options.unsafeForceCompile || options.replCompile);
       return js.call('dart.dynamic');
     }
     return _emitType(node.type);
@@ -3065,8 +3065,12 @@ class CodeGenerator extends GeneralizingAstVisitor
               [l, l, name, name, _visit(rhs)])
         ]);
       }
-      return js.call('dart.dput(#, #, #)',
-          [_visit(target), _emitMemberName(id.name), _visit(rhs)]);
+      return js.call('dart.#(#, #, #)', [
+        _emitDynamicOperationName('dput'),
+        _visit(target),
+        _emitMemberName(id.name),
+        _visit(rhs)
+      ]);
     }
 
     var accessor = id.staticElement;
@@ -3351,10 +3355,16 @@ class CodeGenerator extends GeneralizingAstVisitor
         return new JS.Call(jsTarget, args);
       }
       if (typeArgs != null) {
-        return js.call('dart.dgsend(#, #, #, #)',
-            [jsTarget, new JS.ArrayInitializer(typeArgs), memberName, args]);
+        return js.call('dart.#(#, #, #, #)', [
+          _emitDynamicOperationName('dgsend'),
+          jsTarget,
+          new JS.ArrayInitializer(typeArgs),
+          memberName,
+          args
+        ]);
       } else {
-        return js.call('dart.dsend(#, #, #)', [jsTarget, memberName, args]);
+        return js.call('dart.#(#, #, #)',
+            [_emitDynamicOperationName('dsend'), jsTarget, memberName, args]);
       }
     }
     if (_isObjectMemberCall(target, name)) {
@@ -4635,6 +4645,9 @@ class CodeGenerator extends GeneralizingAstVisitor
     return _emitFunctionTypeArguments(type, instantiated);
   }
 
+  JS.LiteralString _emitDynamicOperationName(String name) =>
+      js.string(options.replCompile ? '${name}Repl' : name);
+
   JS.Expression _emitAccessInternal(Expression target, Element member,
       String memberName, List<JS.Expression> typeArgs) {
     bool isStatic = member is ClassMemberElement && member.isStatic;
@@ -4649,7 +4662,8 @@ class CodeGenerator extends GeneralizingAstVisitor
               [l, l, name, l, name])
         ]);
       }
-      return js.call('dart.dload(#, #)', [_visit(target), name]);
+      return js.call('dart.#(#, #)',
+          [_emitDynamicOperationName('dload'), _visit(target), name]);
     }
 
     var jsTarget = _visit(target);
@@ -5452,17 +5466,16 @@ String jsLibraryName(String libraryRoot, LibraryElement library) {
     return uri.path;
   }
   // TODO(vsm): This is not necessarily unique if '__' appears in a file name.
-  var customSeparator = '__';
+  var separator = '__';
   String qualifiedPath;
   if (uri.scheme == 'package') {
     // Strip the package name.
     // TODO(vsm): This is not unique if an escaped '/'appears in a filename.
     // E.g., "foo/bar.dart" and "foo$47bar.dart" would collide.
-    qualifiedPath = uri.pathSegments.skip(1).join(customSeparator);
-  } else if (isWithin(libraryRoot, uri.toFilePath())) {
-    qualifiedPath = fromUri(uri)
-        .substring(libraryRoot.length)
-        .replaceAll(separator, customSeparator);
+    qualifiedPath = uri.pathSegments.skip(1).join(separator);
+  } else if (uri.toFilePath().startsWith(libraryRoot)) {
+    qualifiedPath =
+        uri.path.substring(libraryRoot.length).replaceAll('/', separator);
   } else {
     // We don't have a unique name.
     throw 'Invalid library root. $libraryRoot does not contain ${uri
