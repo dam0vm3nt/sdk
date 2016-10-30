@@ -58,6 +58,56 @@ import 'format.dart' as generated;
 const informative = null;
 
 /**
+ * Information about a resolved unit.
+ */
+@TopLevel('ADRU')
+abstract class AnalysisDriverResolvedUnit extends base.SummaryClass {
+  factory AnalysisDriverResolvedUnit.fromBuffer(List<int> buffer) =>
+      generated.readAnalysisDriverResolvedUnit(buffer);
+
+  /**
+   * The full list of analysis errors, both syntactic and semantic.
+   */
+  @Id(0)
+  List<AnalysisDriverUnitError> get errors;
+}
+
+/**
+ * Information about an error in a resolved unit.
+ */
+abstract class AnalysisDriverUnitError extends base.SummaryClass {
+  /**
+   * The optional correction hint for the error.
+   */
+  @Id(4)
+  String get correction;
+
+  /**
+   * The length of the error in the file.
+   */
+  @Id(1)
+  int get length;
+
+  /**
+   * The message of the error.
+   */
+  @Id(3)
+  String get message;
+
+  /**
+   * The offset from the beginning of the file.
+   */
+  @Id(0)
+  int get offset;
+
+  /**
+   * The unique name of the error code.
+   */
+  @Id(2)
+  String get uniqueName;
+}
+
+/**
  * Information about an element code range.
  */
 abstract class CodeRange extends base.SummaryClass {
@@ -1926,12 +1976,14 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   /**
    * If a local function, the length of the visible range; zero otherwise.
    */
+  @informative
   @Id(20)
   int get visibleLength;
 
   /**
    * If a local function, the beginning of the visible range; zero otherwise.
    */
+  @informative
   @Id(21)
   int get visibleOffset;
 }
@@ -2335,12 +2387,14 @@ abstract class UnlinkedParam extends base.SummaryClass {
   /**
    * The length of the visible range.
    */
+  @informative
   @Id(10)
   int get visibleLength;
 
   /**
    * The beginning of the visible range.
    */
+  @informative
   @Id(11)
   int get visibleOffset;
 }
@@ -2816,12 +2870,14 @@ abstract class UnlinkedVariable extends base.SummaryClass {
   /**
    * If a local variable, the length of the visible range; zero otherwise.
    */
+  @informative
   @Id(11)
   int get visibleLength;
 
   /**
    * If a local variable, the beginning of the visible range; zero otherwise.
    */
+  @informative
   @Id(12)
   int get visibleOffset;
 }

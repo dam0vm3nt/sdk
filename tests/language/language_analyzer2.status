@@ -5,6 +5,7 @@
 [ $compiler == dart2analyzer ]
 
 regress_26668_test: Fail # Issue 26678
+regress_27617_test/1: MissingCompileTimeError
 
 # Runtime negative test. No static errors or warnings.
 closure_call_wrong_argument_count_negative_test: skip
@@ -409,7 +410,6 @@ switch1_negative_test: CompileTimeError
 switch3_negative_test: CompileTimeError
 switch4_negative_test: CompileTimeError
 switch5_negative_test: CompileTimeError
-switch6_test: StaticWarning
 switch7_negative_test: CompileTimeError
 switch_fallthru_test: StaticWarning
 test_negative_test: CompileTimeError
