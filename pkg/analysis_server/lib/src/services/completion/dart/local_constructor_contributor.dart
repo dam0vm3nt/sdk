@@ -16,6 +16,8 @@ import 'package:analysis_server/src/services/completion/dart/local_declaration_v
 import 'package:analysis_server/src/services/completion/dart/optype.dart';
 import 'package:analysis_server/src/services/completion/dart/suggestion_builder.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
+import 'package:analyzer/dart/ast/standard_ast_factory.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/src/dart/ast/token.dart';
@@ -26,8 +28,9 @@ import '../../../protocol_server.dart'
 
 const DYNAMIC = 'dynamic';
 
-final TypeName NO_RETURN_TYPE = new TypeName(
-    new SimpleIdentifier(new StringToken(TokenType.IDENTIFIER, '', 0)), null);
+final TypeName NO_RETURN_TYPE = astFactory.typeName(
+    astFactory.simpleIdentifier(new StringToken(TokenType.IDENTIFIER, '', 0)),
+    null);
 
 /**
 * Create a new protocol Element for inclusion in a completion suggestion.
@@ -246,8 +249,10 @@ class _Visitor extends LocalDeclarationVisitor {
     String completion = classDecl.name.name;
     SimpleIdentifier elemId;
 
+    ClassElement classElement =
+        resolutionMap.elementDeclaredByClassDeclaration(classDecl);
     int relevance = optype.constructorSuggestionsFilter(
-        classDecl.element?.type, DART_RELEVANCE_DEFAULT);
+        classElement?.type, DART_RELEVANCE_DEFAULT);
     if (relevance == null) {
       return;
     }

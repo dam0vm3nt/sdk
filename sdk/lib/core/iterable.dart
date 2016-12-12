@@ -204,7 +204,7 @@ abstract class Iterable<E> {
    * equal to [element].
    *
    * The equality used to determine whether [element] is equal to an element of
-   * the iterable defaults to the [Object.operator==] of the element.
+   * the iterable defaults to the [Object.==] of the element.
    *
    * Some types of iterable may have a different equality used for its elements.
    * For example, a [Set] may have a custom equality
@@ -368,7 +368,7 @@ abstract class Iterable<E> {
    * Some iterables have a more efficient way to find the number of elements.
    */
   int get length {
-    assert(this is! EfficientLength);
+    assert(this is! EfficientLengthIterable);
     int count = 0;
     Iterator it = iterator;
     while (it.moveNext()) {

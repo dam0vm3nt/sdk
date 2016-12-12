@@ -6,6 +6,7 @@ library computer.highlights2;
 
 import 'package:analysis_server/plugin/protocol/protocol.dart' hide Element;
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
@@ -170,7 +171,9 @@ class DartUnitHighlightsComputer2 {
   bool _addIdentifierRegion_field(SimpleIdentifier node) {
     Element element = node.bestElement;
     if (element is FieldFormalParameterElement) {
-      element = (element as FieldFormalParameterElement).field;
+      if (node.parent is FieldFormalParameter) {
+        element = (element as FieldFormalParameterElement).field;
+      }
     }
     // prepare type
     HighlightRegionType type;
@@ -426,7 +429,7 @@ class DartUnitHighlightsComputer2 {
     if (e is SimpleIdentifier && e.staticElement is PrefixElement) {
       return false;
     }
-    return e.bestType.isDynamic;
+    return resolutionMap.bestTypeForExpression(e).isDynamic;
   }
 }
 

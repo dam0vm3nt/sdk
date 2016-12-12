@@ -268,8 +268,8 @@ abstract class SummaryLinkerTest {
       {String path: '/test.dart', String uri}) {
     uri ??= absUri(path);
     Uri testDartUri = Uri.parse(uri);
-    CompilationUnit unit = _parseText(text);
-    UnlinkedUnitBuilder unlinkedDefiningUnit = serializeAstUnlinked(unit);
+    UnlinkedUnitBuilder unlinkedDefiningUnit =
+      createUnlinkedSummary(testDartUri, text);
     _filesToLink.uriToUnit[testDartUri.toString()] = unlinkedDefiningUnit;
     LinkerInputs linkerInputs = new LinkerInputs(
         allowMissingFiles,
@@ -282,6 +282,9 @@ abstract class SummaryLinkerTest {
     _filesToLink = new _FilesToLink();
     return linkerInputs;
   }
+
+  UnlinkedUnitBuilder createUnlinkedSummary(Uri uri, String text) =>
+      serializeAstUnlinked(_parseText(text));
 
   /**
    * Link together the given file, along with any other files passed to
@@ -315,7 +318,6 @@ abstract class SummaryLinkerTest {
         new Scanner(null, reader, AnalysisErrorListener.NULL_LISTENER);
     Token token = scanner.tokenize();
     Parser parser = new Parser(null, AnalysisErrorListener.NULL_LISTENER);
-    parser.parseGenericMethods = true;
     CompilationUnit unit = parser.parseCompilationUnit(token);
     unit.lineInfo = new LineInfo(scanner.lineStarts);
     return unit;

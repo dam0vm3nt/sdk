@@ -1026,16 +1026,12 @@ class FunctionTypeImpl extends TypeImpl implements FunctionType {
     // This type cast is safe, because we checked it above.
     FunctionType s = other as FunctionType;
     if (t.typeFormals.isNotEmpty) {
-      if (s.typeFormals.isEmpty) {
-        t = instantiateToBounds(t);
-      } else {
-        List<DartType> freshVariables = relateTypeFormals(t, s, returnRelation);
-        if (freshVariables == null) {
-          return false;
-        }
-        t = t.instantiate(freshVariables);
-        s = s.instantiate(freshVariables);
+      List<DartType> freshVariables = relateTypeFormals(t, s, returnRelation);
+      if (freshVariables == null) {
+        return false;
       }
+      t = t.instantiate(freshVariables);
+      s = s.instantiate(freshVariables);
     } else if (s.typeFormals.isNotEmpty) {
       return false;
     }
@@ -2553,6 +2549,12 @@ class TypeParameterTypeImpl extends TypeImpl implements TypeParameterType {
    */
   TypeParameterTypeImpl(TypeParameterElement element)
       : super(element, element.name);
+
+  @override
+  ElementLocation get definition => element.location;
+
+  @override
+  DartType get bound => element.bound ?? DynamicTypeImpl.instance;
 
   @override
   TypeParameterElement get element => super.element as TypeParameterElement;

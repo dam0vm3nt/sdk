@@ -5,6 +5,7 @@
 library analyzer.test.generated.resolver_test_case;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -17,7 +18,7 @@ import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 import 'package:test/test.dart';
 
@@ -232,8 +233,8 @@ class ResolutionVerifier extends RecursiveAstVisitor<Object> {
     if (node.name == "void") {
       return null;
     }
-    if (node.staticType != null &&
-        node.staticType.isDynamic &&
+    if (resolutionMap.staticTypeForExpression(node) != null &&
+        resolutionMap.staticTypeForExpression(node).isDynamic &&
         node.staticElement == null) {
       return null;
     }
@@ -273,7 +274,10 @@ class ResolutionVerifier extends RecursiveAstVisitor<Object> {
       if (root is CompilationUnit) {
         CompilationUnit rootCU = root;
         if (rootCU.element != null) {
-          return rootCU.element.source.fullName;
+          return resolutionMap
+              .elementDeclaredByCompilationUnit(rootCU)
+              .source
+              .fullName;
         } else {
           return "<unknown file- CompilationUnit.getElement() returned null>";
         }
@@ -369,7 +373,7 @@ class ResolverTestCase extends EngineTestCase {
    *           expected
    */
   void assertErrors(Source source,
-      [List<ErrorCode> expectedErrorCodes = ErrorCode.EMPTY_LIST]) {
+      [List<ErrorCode> expectedErrorCodes = const <ErrorCode>[]]) {
     GatheringErrorListener errorListener = new GatheringErrorListener();
     for (AnalysisError error in analysisContext2.computeErrors(source)) {
       expect(error.source, source);
@@ -544,7 +548,7 @@ class ResolverTestCase extends EngineTestCase {
       for (int i = 0; i < count; i++) {
         String typeName = typeNames[i];
         ClassElementImpl type =
-            new ClassElementImpl.forNode(AstFactory.identifier3(typeName));
+            new ClassElementImpl.forNode(AstTestFactory.identifier3(typeName));
         String fileName = "$typeName.dart";
         CompilationUnitElementImpl compilationUnit =
             new CompilationUnitElementImpl(fileName);
@@ -559,7 +563,7 @@ class ResolverTestCase extends EngineTestCase {
     compilationUnit.librarySource =
         compilationUnit.source = definingCompilationUnitSource;
     LibraryElementImpl library = new LibraryElementImpl.forNode(
-        context, AstFactory.libraryIdentifier2([libraryName]));
+        context, AstTestFactory.libraryIdentifier2([libraryName]));
     library.definingCompilationUnit = compilationUnit;
     library.parts = sourcedCompilationUnits;
     return library;
@@ -670,7 +674,7 @@ class ResolverTestCase extends EngineTestCase {
           resolveSource2("/lib${i + 1}.dart", sourceTexts[i]);
       // reference the source if this is the last source
       if (i + 1 == sourceTexts.length) {
-        return unit.element.source;
+        return resolutionMap.elementDeclaredByCompilationUnit(unit).source;
       }
     }
     return null;

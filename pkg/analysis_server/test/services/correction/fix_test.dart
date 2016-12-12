@@ -7,11 +7,11 @@ library test.services.correction.fix;
 import 'dart:async';
 
 import 'package:analysis_server/plugin/edit/fix/fix_core.dart';
-import 'package:analysis_server/plugin/edit/fix/fix_dart.dart';
 import 'package:analysis_server/plugin/protocol/protocol.dart'
     hide AnalysisError;
 import 'package:analysis_server/src/services/correction/fix.dart';
 import 'package:analysis_server/src/services/correction/fix_internal.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/source/package_map_resolver.dart';
@@ -142,10 +142,9 @@ bool test() {
    * Computes fixes for the given [error] in [testUnit].
    */
   Future<List<Fix>> _computeFixes(AnalysisError error) async {
-    DartFixContext dartContext = new DartFixContextImpl(
-        new FixContextImpl(provider, context, error), testUnit);
-    FixProcessor processor = new FixProcessor(dartContext);
-    return processor.compute();
+    FixContextImpl fixContext = new FixContextImpl(provider, context, error);
+    DefaultFixContributor contributor = new DefaultFixContributor();
+    return contributor.computeFixes(fixContext);
   }
 
   /**
@@ -3171,6 +3170,31 @@ main() {
 ''');
   }
 
+  test_importLibraryProject_withClass_constInstanceCreation() async {
+    addSource(
+        '/lib.dart',
+        '''
+class Test {
+  const Test();
+}
+''');
+    resolveTestUnit('''
+main() {
+  const Test();
+}
+''');
+    performAllAnalysisTasks();
+    await assertHasFix(
+        DartFixKind.IMPORT_LIBRARY_PROJECT1,
+        '''
+import 'lib.dart';
+
+main() {
+  const Test();
+}
+''');
+  }
+
   test_importLibraryProject_withClass_hasOtherLibraryWithPrefix() async {
     testFile = '/project/bin/test.dart';
     addSource(
@@ -4601,8 +4625,7 @@ class A<T> {
 }
 
 class B {
-  void process(Map items) {
-  }
+  void process(Map items) {}
 }
 ''');
   }
@@ -4628,8 +4651,7 @@ class A<T> {
 }
 
 class B {
-  dynamic compute() {
-  }
+  dynamic compute() {}
 }
 ''');
   }
@@ -4644,8 +4666,7 @@ class A {
   }
 }
 
-class B {
-}
+class B {}
 ''');
     await assertHasFix(
         DartFixKind.CREATE_METHOD,
@@ -4659,8 +4680,7 @@ class A {
 }
 
 class B {
-  void process(List<int> items) {
-  }
+  void process(List<int> items) {}
 }
 ''');
   }
@@ -4683,8 +4703,26 @@ class A<T> {
     process(items);
   }
 
-  void process(List<T> items) {
+  void process(List<T> items) {}
+}
+''');
   }
+
+  test_undefinedMethod_createQualified_emptyClassBody() async {
+    resolveTestUnit('''
+class A {}
+main() {
+  A.myUndefinedMethod();
+}
+''');
+    await assertHasFix(
+        DartFixKind.CREATE_METHOD,
+        '''
+class A {
+  static void myUndefinedMethod() {}
+}
+main() {
+  A.myUndefinedMethod();
 }
 ''');
   }
@@ -4701,8 +4739,7 @@ main() {
         DartFixKind.CREATE_METHOD,
         '''
 class A {
-  static void myUndefinedMethod() {
-  }
+  static void myUndefinedMethod() {}
 }
 main() {
   A.myUndefinedMethod();
@@ -4725,8 +4762,7 @@ main() {
 class A {
   foo() {}
 
-  static void myUndefinedMethod() {
-  }
+  static void myUndefinedMethod() {}
 }
 main() {
   A.myUndefinedMethod();
@@ -4746,8 +4782,7 @@ main(A a) {
         DartFixKind.CREATE_METHOD,
         '''
 class A {
-  void myUndefinedMethod() {
-  }
+  void myUndefinedMethod() {}
 }
 main(A a) {
   a.myUndefinedMethod();
@@ -4797,8 +4832,7 @@ class D {
     bar(c1.x, c2.x);
   }
 
-  void bar(int x, int x2) {
-  }
+  void bar(int x, int x2) {}
 }''');
   }
 
@@ -4818,8 +4852,7 @@ class A {
     myUndefinedMethod(0, 1.0, '3');
   }
 
-  void myUndefinedMethod(int i, double d, String s) {
-  }
+  void myUndefinedMethod(int i, double d, String s) {}
 }
 ''');
     // linked positions
@@ -4864,8 +4897,7 @@ class A {
     myUndefinedMethod(0, bbb: 1.0, ccc: '2');
   }
 
-  void myUndefinedMethod(int i, {double bbb, String ccc}) {
-  }
+  void myUndefinedMethod(int i, {double bbb, String ccc}) {}
 }
 ''');
     // linked positions
@@ -4908,8 +4940,7 @@ class A {
     int v = myUndefinedMethod();
   }
 
-  int myUndefinedMethod() {
-  }
+  int myUndefinedMethod() {}
 }
 ''');
     // linked positions
@@ -4930,8 +4961,7 @@ class A {
 class A {
   static var f = myUndefinedMethod();
 
-  static myUndefinedMethod() {
-  }
+  static myUndefinedMethod() {}
 }
 ''');
   }
@@ -4952,8 +4982,7 @@ class A {
     myUndefinedMethod();
   }
 
-  static void myUndefinedMethod() {
-  }
+  static void myUndefinedMethod() {}
 }
 ''');
   }
@@ -4971,8 +5000,7 @@ main() {
         DartFixKind.CREATE_METHOD,
         '''
 class A {
-  void myUndefinedMethod() {
-  }
+  void myUndefinedMethod() {}
 }
 main() {
   var a = new A();
@@ -5018,8 +5046,7 @@ library test2;
 import 'test3.dart' as bbb;
 export 'test3.dart';
 class D {
-  void foo(bbb.E e) {
-  }
+  void foo(bbb.E e) {}
 }
 ''');
   }
@@ -5052,8 +5079,7 @@ main(test2.D d, test2.E e) {
         r'''
 library test2;
 class D {
-  void foo(E e) {
-  }
+  void foo(E e) {}
 }
 class E {}
 ''');
@@ -5276,7 +5302,10 @@ class LintFixTest extends BaseFixProcessorTest {
   void findLint(String src, String lintCode, {int length: 1}) {
     int errorOffset = src.indexOf('/*LINT*/');
     resolveTestUnit(src.replaceAll('/*LINT*/', ''));
-    error = new AnalysisError(testUnit.element.source, errorOffset, length,
+    error = new AnalysisError(
+        resolutionMap.elementDeclaredByCompilationUnit(testUnit).source,
+        errorOffset,
+        length,
         new LintCode(lintCode, '<ignored>'));
   }
 

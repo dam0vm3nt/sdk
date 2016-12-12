@@ -234,6 +234,13 @@ abstract class TestSuite {
     return dartExecutable;
   }
 
+  String get processTestBinaryFileName {
+    String suffix = executableBinarySuffix;
+    String processTestExecutable = '$buildDir/process_test$suffix';
+    TestUtils.ensureExists(processTestExecutable, configuration);
+    return processTestExecutable;
+  }
+
   String get d8FileName {
     var suffix = getExecutableSuffix('d8');
     var d8Dir = TestUtils.dartDir.append('third_party/d8');
@@ -1824,11 +1831,10 @@ class StandardTestSuite extends TestSuite {
   }
 
   List<List<String>> getVmOptions(Map optionsFromFile) {
-    var COMPILERS = const ['none', 'precompiler', 'dart2app', 'dart2appjit'];
+    var COMPILERS = const ['none', 'precompiler', 'app_jit'];
     var RUNTIMES = const [
       'none',
       'dart_precompiled',
-      'dart_app',
       'vm',
       'drt',
       'dartium',

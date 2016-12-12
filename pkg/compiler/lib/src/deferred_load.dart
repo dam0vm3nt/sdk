@@ -346,6 +346,8 @@ class DeferredLoadTask extends CompilerTask {
                   }
                   break;
                 case TypeUseKind.INSTANTIATION:
+                case TypeUseKind.MIRROR_INSTANTIATION:
+                case TypeUseKind.NATIVE_INSTANTIATION:
                 case TypeUseKind.IS_CHECK:
                 case TypeUseKind.AS_CAST:
                 case TypeUseKind.CATCH_TYPE:
@@ -418,7 +420,7 @@ class DeferredLoadTask extends CompilerTask {
       // If we see a class, add everything its live instance members refer
       // to.  Static members are not relevant, unless we are processing
       // extra dependencies due to mirrors.
-      void addLiveInstanceMember(Element element) {
+      void addLiveInstanceMember(_, Element element) {
         if (!compiler.enqueuer.resolution.hasBeenProcessed(element)) return;
         if (!isMirrorUsage && !element.isInstanceMember) return;
         elements.add(element);
@@ -426,11 +428,7 @@ class DeferredLoadTask extends CompilerTask {
       }
 
       ClassElement cls = element.declaration;
-      cls.forEachLocalMember(addLiveInstanceMember);
-      if (cls.implementation != cls) {
-        // TODO(ahe): Why doesn't ClassElement.forEachLocalMember do this?
-        cls.implementation.forEachLocalMember(addLiveInstanceMember);
-      }
+      cls.implementation.forEachMember(addLiveInstanceMember);
       for (var type in cls.implementation.allSupertypes) {
         elements.add(type.element.implementation);
       }
@@ -841,8 +839,8 @@ class DeferredLoadTask extends CompilerTask {
       });
     }
     if (isProgramSplit) {
-      isProgramSplit = compiler.backend.enableDeferredLoadingIfSupported(
-          lastDeferred, compiler.globalDependencies);
+      isProgramSplit =
+          compiler.backend.enableDeferredLoadingIfSupported(lastDeferred);
     }
   }
 

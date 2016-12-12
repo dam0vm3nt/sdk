@@ -307,6 +307,11 @@ class SignatureResolver extends MappingVisitor<FormalElementX> {
     DiagnosticReporter reporter = resolution.reporter;
 
     List<DartType> createTypeVariables(NodeList typeVariableNodes) {
+      if (element.isPatch) {
+        FunctionTypedElement origin = element.origin;
+        origin.computeType(resolution);
+        return origin.typeVariables;
+      }
       if (typeVariableNodes == null) return const <DartType>[];
 
       // Create the types and elements corresponding to [typeVariableNodes].
@@ -370,7 +375,7 @@ class SignatureResolver extends MappingVisitor<FormalElementX> {
       returnType = element.enclosingClass.thisType;
       // Because there is no type annotation for the return type of
       // this element, we explicitly add one.
-      registry.registerTypeUse(new TypeUse.checkedModeCheck(returnType));
+      registry.registerCheckedModeCheck(returnType);
     } else {
       AsyncMarker asyncMarker = AsyncMarker.SYNC;
       if (isFunctionExpression) {

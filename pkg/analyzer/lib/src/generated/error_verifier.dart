@@ -8,6 +8,7 @@ import 'dart:collection';
 import "dart:math" as math;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
@@ -296,21 +297,10 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   final bool enableSuperMixins;
 
   /**
-   * If `true`, asserts are allowed to take a second argument representing the
-   * assertion failure message (see DEP 37).
-   */
-  final bool enableAssertMessage;
-
-  /**
    * Initialize a newly created error verifier.
    */
-  ErrorVerifier(
-      this._errorReporter,
-      this._currentLibrary,
-      this._typeProvider,
-      this._inheritanceManager,
-      this.enableSuperMixins,
-      this.enableAssertMessage) {
+  ErrorVerifier(this._errorReporter, this._currentLibrary, this._typeProvider,
+      this._inheritanceManager, this.enableSuperMixins) {
     this._isInSystemLibrary = _currentLibrary.source.isInSystemLibrary;
     this._hasExtUri = _currentLibrary.hasExtUri;
     _isEnclosingConstructorConst = false;
@@ -347,9 +337,14 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   }
 
   @override
+  Object visitAssertInitializer(AssertInitializer node) {
+    _checkForNonBoolExpression(node);
+    return super.visitAssertInitializer(node);
+  }
+
+  @override
   Object visitAssertStatement(AssertStatement node) {
     _checkForNonBoolExpression(node);
-    _checkAssertMessage(node);
     return super.visitAssertStatement(node);
   }
 
@@ -850,7 +845,8 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       // we can get the function element via `node?.element?.type?.element` but
       // it doesn't have hasImplicitReturnType set correctly.
       if (!_options.implicitDynamic && node.returnType == null) {
-        DartType parameterType = node.element.type;
+        DartType parameterType =
+            resolutionMap.elementDeclaredByFormalParameter(node).type;
         if (parameterType is FunctionType &&
             parameterType.returnType.isDynamic) {
           _errorReporter.reportErrorForNode(
@@ -924,6 +920,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   @override
   Object visitIsExpression(IsExpression node) {
     _checkForTypeAnnotationDeferredClass(node.type);
+    _checkForTypeAnnotationGenericFunctionParameter(node.type);
     return super.visitIsExpression(node);
   }
 
@@ -1291,18 +1288,6 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       _errorReporter.reportErrorForNode(errorCode, node);
     }
     return super.visitYieldStatement(node);
-  }
-
-  /**
-   * If the given assert [statement] specifies a message, verify that support
-   * for assertions with messages is enabled.
-   */
-  void _checkAssertMessage(AssertStatement statement) {
-    Expression expression = statement.message;
-    if (expression != null && !enableAssertMessage) {
-      _errorReporter.reportErrorForNode(
-          CompileTimeErrorCode.EXTRA_ARGUMENT_TO_ASSERT, expression);
-    }
   }
 
   /**
@@ -1754,7 +1739,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
         int count = params1.length;
         if (params2.length != count) {
           _errorReporter.reportErrorForNode(
-              StaticWarningCode.INVALID_METHOD_OVERRIDE_TYPE_PARAMETERS,
+              HintCode.INVALID_METHOD_OVERRIDE_TYPE_PARAMETERS,
               errorNameTarget, [
             count,
             params2.length,
@@ -1788,7 +1773,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
           pFresh.bound = bound2;
           if (!_typeSystem.isSubtypeOf(bound2, bound1)) {
             _errorReporter.reportErrorForNode(
-                StaticWarningCode.INVALID_METHOD_OVERRIDE_TYPE_PARAMETER_BOUND,
+                HintCode.INVALID_METHOD_OVERRIDE_TYPE_PARAMETER_BOUND,
                 errorNameTarget, [
               p1.displayName,
               p1.bound,
@@ -2230,7 +2215,8 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
     DartType redirectedReturnType = redirectedType.returnType;
 
     // Report specific problem when return type is incompatible
-    FunctionType constructorType = declaration.element.type;
+    FunctionType constructorType =
+        resolutionMap.elementDeclaredByConstructorDeclaration(declaration).type;
     DartType constructorReturnType = constructorType.returnType;
     if (!_typeSystem.isAssignableTo(
         redirectedReturnType, constructorReturnType)) {
@@ -2610,8 +2596,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       // terminated with 'throw' expression
       if (statement is ExpressionStatement) {
         Expression expression = statement.expression;
-        if (expression is ThrowExpression ||
-            expression is RethrowExpression) {
+        if (expression is ThrowExpression || expression is RethrowExpression) {
           return;
         }
       }
@@ -2885,8 +2870,9 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
           Element enclosingElementOfSetter = null;
           ClassMember conflictingSetter = memberHashMap[setterName];
           if (conflictingSetter != null) {
-            enclosingElementOfSetter =
-                conflictingSetter.element.enclosingElement;
+            enclosingElementOfSetter = resolutionMap
+                .elementDeclaredByDeclaration(conflictingSetter)
+                .enclosingElement;
           } else {
             ExecutableElement elementFromInheritance = _inheritanceManager
                 .lookupInheritance(_enclosingClass, setterName);
@@ -4726,7 +4712,7 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   }
 
   void _checkForMissingJSLibAnnotation(Annotation node) {
-    if (node.elementAnnotation?.isJS ?? false) {
+    if (resolutionMap.elementAnnotationForAnnotation(node)?.isJS ?? false) {
       if (_currentLibrary.isJS != true) {
         _errorReporter.reportErrorForNode(
             HintCode.MISSING_JS_LIB_ANNOTATION, node);
@@ -4982,104 +4968,19 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
     } else if (_enclosingClass.hasNoSuchMethod) {
       return;
     }
-    //
-    // Store in local sets the set of all method and accessor names
-    //
-    HashSet<ExecutableElement> missingOverrides =
-        new HashSet<ExecutableElement>();
-    //
-    // Loop through the set of all executable elements declared in the implicit
-    // interface.
-    //
-    Map<String, ExecutableElement> membersInheritedFromInterfaces =
-        _inheritanceManager.getMembersInheritedFromInterfaces(_enclosingClass);
-    Map<String, ExecutableElement> membersInheritedFromSuperclasses =
-        _inheritanceManager.getMembersInheritedFromClasses(_enclosingClass);
-    for (String memberName in membersInheritedFromInterfaces.keys) {
-      ExecutableElement executableElt =
-          membersInheritedFromInterfaces[memberName];
-      if (memberName == null) {
-        break;
-      }
-      // If the element is not synthetic and can be determined to be defined in
-      // Object, skip it.
-      if (executableElt.enclosingElement != null &&
-          (executableElt.enclosingElement as ClassElement).type.isObject) {
-        continue;
-      }
-      // Check to see if some element is in local enclosing class that matches
-      // the name of the required member.
-      if (_isMemberInClassOrMixin(executableElt, _enclosingClass)) {
-        // We do not have to verify that this implementation of the found method
-        // matches the required function type: the set of
-        // StaticWarningCode.INVALID_METHOD_OVERRIDE_* warnings break out the
-        // different specific situations.
-        continue;
-      }
-      // First check to see if this element was declared in the superclass
-      // chain, in which case there is already a concrete implementation.
-      ExecutableElement elt = membersInheritedFromSuperclasses[memberName];
-      // Check to see if an element was found in the superclass chain with the
-      // correct name.
-      if (elt != null) {
-        // Reference the types, if any are null then continue.
-        InterfaceType enclosingType = _enclosingClass.type;
-        FunctionType concreteType = elt.type;
-        FunctionType requiredMemberType = executableElt.type;
-        if (enclosingType == null ||
-            concreteType == null ||
-            requiredMemberType == null) {
-          continue;
-        }
-        // Some element was found in the superclass chain that matches the name
-        // of the required member.
-        // If it is not abstract and it is the correct one (types match- the
-        // version of this method that we have has the correct number of
-        // parameters, etc), then this class has a valid implementation of this
-        // method, so skip it.
-        if ((elt is MethodElement && !elt.isAbstract) ||
-            (elt is PropertyAccessorElement && !elt.isAbstract)) {
-          // Since we are comparing two function types, we need to do the
-          // appropriate type substitutions first ().
-          FunctionType foundConcreteFT = _inheritanceManager
-              .substituteTypeArgumentsInMemberFromInheritance(
-                  concreteType, memberName, enclosingType);
-          FunctionType requiredMemberFT = _inheritanceManager
-              .substituteTypeArgumentsInMemberFromInheritance(
-                  requiredMemberType, memberName, enclosingType);
-          foundConcreteFT = _typeSystem.functionTypeToConcreteType(
-              _typeProvider, foundConcreteFT);
-          requiredMemberFT = _typeSystem.functionTypeToConcreteType(
-              _typeProvider, requiredMemberFT);
 
-          // Strong mode does override checking for types in CodeChecker, so
-          // we can skip it here. Doing it here leads to unnecessary duplicate
-          // error messages in subclasses that inherit from one that has an
-          // override error.
-          //
-          // See: https://github.com/dart-lang/sdk/issues/25232
-          if (_options.strongMode ||
-              _typeSystem.isSubtypeOf(foundConcreteFT, requiredMemberFT)) {
-            continue;
-          }
-        }
-      }
-      // The not qualifying concrete executable element was found, add it to the
-      // list.
-      missingOverrides.add(executableElt);
-    }
-    // Now that we have the set of missing overrides, generate a warning on this
-    // class.
-    int missingOverridesSize = missingOverrides.length;
-    if (missingOverridesSize == 0) {
+    Set<ExecutableElement> missingOverrides = computeMissingOverrides(
+        _options.strongMode,
+        _typeProvider,
+        _typeSystem,
+        _inheritanceManager,
+        _enclosingClass);
+    if (missingOverrides.isEmpty) {
       return;
     }
-    List<ExecutableElement> missingOverridesArray =
-        new List.from(missingOverrides);
-    List<String> stringMembersArrayListSet = new List<String>();
-    for (int i = 0; i < missingOverridesArray.length; i++) {
-      String newStrMember;
-      ExecutableElement element = missingOverridesArray[i];
+
+    List<String> missingOverrideNames = <String>[];
+    for (ExecutableElement element in missingOverrides) {
       Element enclosingElement = element.enclosingElement;
       String prefix = StringUtilities.EMPTY;
       if (element is PropertyAccessorElement) {
@@ -5091,60 +4992,57 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
           // "setter "
         }
       }
+      String newStrMember;
       if (enclosingElement != null) {
         newStrMember =
             "$prefix'${enclosingElement.displayName}.${element.displayName}'";
       } else {
         newStrMember = "$prefix'${element.displayName}'";
       }
-      stringMembersArrayListSet.add(newStrMember);
+      missingOverrideNames.add(newStrMember);
     }
-    List<String> stringMembersArray = new List.from(stringMembersArrayListSet);
-    stringMembersArray.sort();
-    AnalysisErrorWithProperties analysisError;
-    if (stringMembersArray.length == 1) {
-      analysisError = _errorReporter.newErrorWithProperties(
+    missingOverrideNames.sort();
+
+    if (missingOverrideNames.length == 1) {
+      _errorReporter.reportErrorForNode(
           StaticWarningCode.NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER_ONE,
           classNameNode,
-          [stringMembersArray[0]]);
-    } else if (stringMembersArray.length == 2) {
-      analysisError = _errorReporter.newErrorWithProperties(
+          [missingOverrideNames[0]]);
+    } else if (missingOverrideNames.length == 2) {
+      _errorReporter.reportErrorForNode(
           StaticWarningCode.NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER_TWO,
           classNameNode,
-          [stringMembersArray[0], stringMembersArray[1]]);
-    } else if (stringMembersArray.length == 3) {
-      analysisError = _errorReporter.newErrorWithProperties(
+          [missingOverrideNames[0], missingOverrideNames[1]]);
+    } else if (missingOverrideNames.length == 3) {
+      _errorReporter.reportErrorForNode(
           StaticWarningCode.NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER_THREE,
           classNameNode, [
-        stringMembersArray[0],
-        stringMembersArray[1],
-        stringMembersArray[2]
+        missingOverrideNames[0],
+        missingOverrideNames[1],
+        missingOverrideNames[2]
       ]);
-    } else if (stringMembersArray.length == 4) {
-      analysisError = _errorReporter.newErrorWithProperties(
+    } else if (missingOverrideNames.length == 4) {
+      _errorReporter.reportErrorForNode(
           StaticWarningCode.NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER_FOUR,
           classNameNode, [
-        stringMembersArray[0],
-        stringMembersArray[1],
-        stringMembersArray[2],
-        stringMembersArray[3]
+        missingOverrideNames[0],
+        missingOverrideNames[1],
+        missingOverrideNames[2],
+        missingOverrideNames[3]
       ]);
     } else {
-      analysisError = _errorReporter.newErrorWithProperties(
+      _errorReporter.reportErrorForNode(
           StaticWarningCode
               .NON_ABSTRACT_CLASS_INHERITS_ABSTRACT_MEMBER_FIVE_PLUS,
           classNameNode,
           [
-            stringMembersArray[0],
-            stringMembersArray[1],
-            stringMembersArray[2],
-            stringMembersArray[3],
-            stringMembersArray.length - 4
+            missingOverrideNames[0],
+            missingOverrideNames[1],
+            missingOverrideNames[2],
+            missingOverrideNames[3],
+            missingOverrideNames.length - 4
           ]);
     }
-    analysisError.setProperty(
-        ErrorProperty.UNIMPLEMENTED_METHODS, missingOverridesArray);
-    _errorReporter.reportError(analysisError);
   }
 
   /**
@@ -5163,13 +5061,13 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   }
 
   /**
-   * Verify that the given assert [statement] has either a 'bool' or
-   * '() -> bool' input.
+   * Verify that the given [assertion] has either a 'bool' or '() -> bool'
+   * condition.
    *
    * See [StaticTypeWarningCode.NON_BOOL_EXPRESSION].
    */
-  void _checkForNonBoolExpression(AssertStatement statement) {
-    Expression expression = statement.condition;
+  void _checkForNonBoolExpression(Assertion assertion) {
+    Expression expression = assertion.condition;
     DartType type = getStaticType(expression);
     if (type is InterfaceType) {
       if (!_typeSystem.isAssignableTo(type, _boolType)) {
@@ -5686,6 +5584,29 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
     if (name != null && name.isDeferred) {
       _errorReporter.reportErrorForNode(
           StaticWarningCode.TYPE_ANNOTATION_DEFERRED_CLASS, name, [name.name]);
+    }
+  }
+
+  /**
+   * Verify that the given type [name] is not a type parameter in a generic
+   * method.
+   *
+   * See [StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER].
+   */
+  void _checkForTypeAnnotationGenericFunctionParameter(TypeName typeName) {
+    if (typeName == null) {
+      return;
+    }
+    Identifier name = typeName.name;
+    if (name is SimpleIdentifier) {
+      Element element = name.staticElement;
+      if (element is TypeParameterElement &&
+          element.enclosingElement is ExecutableElement) {
+        _errorReporter.reportErrorForNode(
+            StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER,
+            name,
+            [name.name]);
+      }
     }
   }
 
@@ -6507,57 +6428,6 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   }
 
   /**
-   * Return `true` iff the given [classElement] has a concrete method, getter or
-   * setter that matches the name of the given [executableElement] in either the
-   * class itself, or one of its' mixins.
-   *
-   * By "match", only the name of the member is tested to match, it does not
-   * have to equal or be a subtype of the given executable element, this is due
-   * to the specific use where this method is used in
-   * [_checkForNonAbstractClassInheritsAbstractMember].
-   */
-  bool _isMemberInClassOrMixin(
-      ExecutableElement executableElement, ClassElement classElement) {
-    ExecutableElement foundElt = null;
-    String executableName = executableElement.name;
-    if (executableElement is MethodElement) {
-      foundElt = classElement.getMethod(executableName);
-      if (foundElt != null && !foundElt.isAbstract) {
-        return true;
-      }
-      List<InterfaceType> mixins = classElement.mixins;
-      for (int i = 0; i < mixins.length && foundElt == null; i++) {
-        foundElt = mixins[i].getMethod(executableName);
-      }
-      if (foundElt != null && !foundElt.isAbstract) {
-        return true;
-      }
-    } else if (executableElement is PropertyAccessorElement) {
-      if (executableElement.isGetter) {
-        foundElt = classElement.getGetter(executableName);
-      }
-      if (foundElt == null && executableElement.isSetter) {
-        foundElt = classElement.getSetter(executableName);
-      }
-      if (foundElt != null &&
-          !(foundElt as PropertyAccessorElement).isAbstract) {
-        return true;
-      }
-      List<InterfaceType> mixins = classElement.mixins;
-      for (int i = 0; i < mixins.length && foundElt == null; i++) {
-        foundElt = mixins[i].getGetter(executableName);
-        if (foundElt == null) {
-          foundElt = mixins[i].getSetter(executableName);
-        }
-      }
-      if (foundElt != null && !foundElt.isAbstract) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  /**
    * Return `true` if the given 'this' [expression] is in a valid context.
    */
   bool _isThisInValidContext(ThisExpression expression) {
@@ -6682,6 +6552,106 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
   }
 
   /**
+   * Returns [ExecutableElement]s that are declared in interfaces implemented
+   * by the [classElement], but not implemented by the [classElement] or its
+   * superclasses.
+   */
+  static Set<ExecutableElement> computeMissingOverrides(
+      bool strongMode,
+      TypeProvider typeProvider,
+      TypeSystem typeSystem,
+      InheritanceManager inheritanceManager,
+      ClassElement classElement) {
+    //
+    // Store in local sets the set of all method and accessor names
+    //
+    HashSet<ExecutableElement> missingOverrides =
+        new HashSet<ExecutableElement>();
+    //
+    // Loop through the set of all executable elements declared in the implicit
+    // interface.
+    //
+    Map<String, ExecutableElement> membersInheritedFromInterfaces =
+        inheritanceManager.getMembersInheritedFromInterfaces(classElement);
+    Map<String, ExecutableElement> membersInheritedFromSuperclasses =
+        inheritanceManager.getMembersInheritedFromClasses(classElement);
+    for (String memberName in membersInheritedFromInterfaces.keys) {
+      ExecutableElement executableElt =
+          membersInheritedFromInterfaces[memberName];
+      if (memberName == null) {
+        break;
+      }
+      // If the element is not synthetic and can be determined to be defined in
+      // Object, skip it.
+      if (executableElt.enclosingElement != null &&
+          (executableElt.enclosingElement as ClassElement).type.isObject) {
+        continue;
+      }
+      // Check to see if some element is in local enclosing class that matches
+      // the name of the required member.
+      if (_isMemberInClassOrMixin(executableElt, classElement)) {
+        // We do not have to verify that this implementation of the found method
+        // matches the required function type: the set of
+        // StaticWarningCode.INVALID_METHOD_OVERRIDE_* warnings break out the
+        // different specific situations.
+        continue;
+      }
+      // First check to see if this element was declared in the superclass
+      // chain, in which case there is already a concrete implementation.
+      ExecutableElement elt = membersInheritedFromSuperclasses[memberName];
+      // Check to see if an element was found in the superclass chain with the
+      // correct name.
+      if (elt != null) {
+        // Reference the types, if any are null then continue.
+        InterfaceType enclosingType = classElement.type;
+        FunctionType concreteType = elt.type;
+        FunctionType requiredMemberType = executableElt.type;
+        if (enclosingType == null ||
+            concreteType == null ||
+            requiredMemberType == null) {
+          continue;
+        }
+        // Some element was found in the superclass chain that matches the name
+        // of the required member.
+        // If it is not abstract and it is the correct one (types match- the
+        // version of this method that we have has the correct number of
+        // parameters, etc), then this class has a valid implementation of this
+        // method, so skip it.
+        if ((elt is MethodElement && !elt.isAbstract) ||
+            (elt is PropertyAccessorElement && !elt.isAbstract)) {
+          // Since we are comparing two function types, we need to do the
+          // appropriate type substitutions first ().
+          FunctionType foundConcreteFT =
+              inheritanceManager.substituteTypeArgumentsInMemberFromInheritance(
+                  concreteType, memberName, enclosingType);
+          FunctionType requiredMemberFT =
+              inheritanceManager.substituteTypeArgumentsInMemberFromInheritance(
+                  requiredMemberType, memberName, enclosingType);
+          foundConcreteFT = typeSystem.functionTypeToConcreteType(
+              typeProvider, foundConcreteFT);
+          requiredMemberFT = typeSystem.functionTypeToConcreteType(
+              typeProvider, requiredMemberFT);
+
+          // Strong mode does override checking for types in CodeChecker, so
+          // we can skip it here. Doing it here leads to unnecessary duplicate
+          // error messages in subclasses that inherit from one that has an
+          // override error.
+          //
+          // See: https://github.com/dart-lang/sdk/issues/25232
+          if (strongMode ||
+              typeSystem.isSubtypeOf(foundConcreteFT, requiredMemberFT)) {
+            continue;
+          }
+        }
+      }
+      // The not qualifying concrete executable element was found, add it to the
+      // list.
+      missingOverrides.add(executableElt);
+    }
+    return missingOverrides;
+  }
+
+  /**
    * Return the static type of the given [expression] that is to be used for
    * type analysis.
    */
@@ -6706,6 +6676,57 @@ class ErrorVerifier extends RecursiveAstVisitor<Object> {
       }
     }
     return null;
+  }
+
+  /**
+   * Return `true` iff the given [classElement] has a concrete method, getter or
+   * setter that matches the name of the given [executableElement] in either the
+   * class itself, or one of its' mixins.
+   *
+   * By "match", only the name of the member is tested to match, it does not
+   * have to equal or be a subtype of the given executable element, this is due
+   * to the specific use where this method is used in
+   * [_checkForNonAbstractClassInheritsAbstractMember].
+   */
+  static bool _isMemberInClassOrMixin(
+      ExecutableElement executableElement, ClassElement classElement) {
+    ExecutableElement foundElt = null;
+    String executableName = executableElement.name;
+    if (executableElement is MethodElement) {
+      foundElt = classElement.getMethod(executableName);
+      if (foundElt != null && !foundElt.isAbstract) {
+        return true;
+      }
+      List<InterfaceType> mixins = classElement.mixins;
+      for (int i = 0; i < mixins.length && foundElt == null; i++) {
+        foundElt = mixins[i].getMethod(executableName);
+      }
+      if (foundElt != null && !foundElt.isAbstract) {
+        return true;
+      }
+    } else if (executableElement is PropertyAccessorElement) {
+      if (executableElement.isGetter) {
+        foundElt = classElement.getGetter(executableName);
+      }
+      if (foundElt == null && executableElement.isSetter) {
+        foundElt = classElement.getSetter(executableName);
+      }
+      if (foundElt != null &&
+          !(foundElt as PropertyAccessorElement).isAbstract) {
+        return true;
+      }
+      List<InterfaceType> mixins = classElement.mixins;
+      for (int i = 0; i < mixins.length && foundElt == null; i++) {
+        foundElt = mixins[i].getGetter(executableName);
+        if (foundElt == null) {
+          foundElt = mixins[i].getSetter(executableName);
+        }
+      }
+      if (foundElt != null && !foundElt.isAbstract) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
@@ -6856,7 +6877,9 @@ class RequiredConstantsComputer extends RecursiveAstVisitor {
     DartType type = node.constructorName.type.type;
     if (type is InterfaceType) {
       _checkForMissingRequiredParam(
-          node.staticElement?.type, node.argumentList, node.constructorName);
+          resolutionMap.staticElementForConstructorReference(node)?.type,
+          node.argumentList,
+          node.constructorName);
     }
     return super.visitInstanceCreationExpression(node);
   }
@@ -6871,7 +6894,8 @@ class RequiredConstantsComputer extends RecursiveAstVisitor {
   @override
   Object visitRedirectingConstructorInvocation(
       RedirectingConstructorInvocation node) {
-    DartType type = node.staticElement?.type;
+    DartType type =
+        resolutionMap.staticElementForConstructorReference(node)?.type;
     if (type != null) {
       _checkForMissingRequiredParam(type, node.argumentList, node);
     }
@@ -6880,7 +6904,8 @@ class RequiredConstantsComputer extends RecursiveAstVisitor {
 
   @override
   Object visitSuperConstructorInvocation(SuperConstructorInvocation node) {
-    DartType type = node.staticElement?.type;
+    DartType type =
+        resolutionMap.staticElementForConstructorReference(node)?.type;
     if (type != null) {
       _checkForMissingRequiredParam(type, node.argumentList, node);
     }

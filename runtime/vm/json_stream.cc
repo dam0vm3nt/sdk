@@ -65,8 +65,7 @@ JSONStream::JSONStream(intptr_t buf_size)
 }
 
 
-JSONStream::~JSONStream() {
-}
+JSONStream::~JSONStream() {}
 
 
 void JSONStream::Setup(Zone* zone,
@@ -140,6 +139,8 @@ static const char* GetJSONRpcErrorMessage(intptr_t code) {
       return "Isolate must be runnable";
     case kIsolateMustBePaused:
       return "Isolate must be paused";
+    case kCannotResume:
+      return "Cannot resume execution";
     case kIsolateIsReloading:
       return "Isolate is reloading";
     case kFileSystemAlreadyExists:
@@ -168,8 +169,7 @@ static void PrintRequest(JSONObject* obj, JSONStream* js) {
 }
 
 
-void JSONStream::PrintError(intptr_t code,
-                            const char* details_format, ...) {
+void JSONStream::PrintError(intptr_t code, const char* details_format, ...) {
   SetupError();
   JSONObject jsobj(this);
   jsobj.AddProperty("code", code);
@@ -196,8 +196,8 @@ void JSONStream::PrintError(intptr_t code,
 
 
 void JSONStream::PostNullReply(Dart_Port port) {
-  PortMap::PostMessage(new Message(
-      port, Object::null(), Message::kNormalPriority));
+  PortMap::PostMessage(
+      new Message(port, Object::null(), Message::kNormalPriority));
 }
 
 
@@ -262,11 +262,13 @@ void JSONStream::PostReply() {
     const char* isolate_name = isolate->name();
     int64_t total_time = OS::GetCurrentTimeMicros() - setup_time_micros_;
     if (result) {
-      OS::Print("[+%" Pd64 "ms] Isolate %s processed service request %s "
+      OS::Print("[+%" Pd64
+                "ms] Isolate %s processed service request %s "
                 "(%" Pd64 "us)\n",
                 Dart::timestamp(), isolate_name, method_, total_time);
     } else {
-      OS::Print("[+%" Pd64 "ms] Isolate %s processed service request %s "
+      OS::Print("[+%" Pd64
+                "ms] Isolate %s processed service request %s "
                 "(%" Pd64 "us) FAILED\n",
                 Dart::timestamp(), isolate_name, method_, total_time);
     }
@@ -417,7 +419,7 @@ void JSONStream::PrintValue(double d) {
 
 
 static const char base64_digits[65] =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static const char base64_pad = '=';
 
 
@@ -484,9 +486,9 @@ void JSONStream::PrintfValue(const char* format, ...) {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   buffer_.AddChar('"');
@@ -681,9 +683,9 @@ void JSONStream::PrintfProperty(const char* name, const char* format, ...) {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   buffer_.AddChar('"');
@@ -786,7 +788,7 @@ bool JSONStream::NeedComma() {
   if (length == 0) {
     return false;
   }
-  char ch = buffer[length-1];
+  char ch = buffer[length - 1];
   return (ch != '[') && (ch != '{') && (ch != ':') && (ch != ',');
 }
 
@@ -794,8 +796,10 @@ bool JSONStream::NeedComma() {
 void JSONStream::EnsureIntegerIsRepresentableInJavaScript(int64_t i) {
 #ifdef DEBUG
   if (!Utils::IsJavascriptInt(i)) {
-    OS::Print("JSONStream::EnsureIntegerIsRepresentableInJavaScript failed on "
-              "%" Pd64 "\n", i);
+    OS::Print(
+        "JSONStream::EnsureIntegerIsRepresentableInJavaScript failed on "
+        "%" Pd64 "\n",
+        i);
     UNREACHABLE();
   }
 #endif
@@ -817,7 +821,7 @@ void JSONStream::AddEscapedUTF8String(const char* s, intptr_t len) {
   }
   const uint8_t* s8 = reinterpret_cast<const uint8_t*>(s);
   intptr_t i = 0;
-  for (; i < len; ) {
+  for (; i < len;) {
     // Extract next UTF8 character.
     int32_t ch = 0;
     int32_t ch_len = Utf8::Decode(&s8[i], len - i, &ch);
@@ -850,7 +854,7 @@ bool JSONStream::AddDartString(const String& s,
       if (i + 1 == limit) {
         buffer_.EscapeAndAddUTF16CodeUnit(code_unit);
       } else {
-        uint16_t next_code_unit = s.CharAt(i+1);
+        uint16_t next_code_unit = s.CharAt(i + 1);
         if (Utf16::IsTrailSurrogate(next_code_unit)) {
           uint32_t decoded = Utf16::Decode(code_unit, next_code_unit);
           buffer_.EscapeAndAddCodeUnit(decoded);
@@ -882,9 +886,9 @@ void JSONObject::AddFixedServiceId(const char* format, ...) const {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');
@@ -941,8 +945,7 @@ void JSONObject::AddUnresolvedLocation(
     // This unresolved breakpoint was specified at a particular line.
     location.AddProperty("line", bpt_loc->requested_line_number());
     if (bpt_loc->requested_column_number() >= 0) {
-      location.AddProperty("column",
-                           bpt_loc->requested_column_number());
+      location.AddProperty("column", bpt_loc->requested_column_number());
     }
   } else {
     // This unresolved breakpoint was requested at some function entry.
@@ -951,16 +954,15 @@ void JSONObject::AddUnresolvedLocation(
 }
 
 
-void JSONObject::AddPropertyF(const char* name,
-                              const char* format, ...) const {
+void JSONObject::AddPropertyF(const char* name, const char* format, ...) const {
   stream_->PrintPropertyName(name);
   va_list args;
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');
@@ -976,9 +978,9 @@ void JSONArray::AddValueF(const char* format, ...) const {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');

@@ -57,11 +57,15 @@ abstract class UnresolvedVisitor {
   ir.Expression buildThrowNoSuchMethodError(ir.Procedure exceptionBuilder,
       ir.Expression receiver, String memberName, ir.Arguments callArguments,
       [Element candidateTarget]) {
-    ir.Expression memberNameArg = new ir.SymbolLiteral(memberName);
-    ir.Expression positional = new ir.ListLiteral(callArguments.positional);
-    ir.Expression named = new ir.MapLiteral(callArguments.named.map((e) {
-      return new ir.MapEntry(new ir.SymbolLiteral(e.name), e.value);
-    }).toList());
+    ir.Expression memberNameArg =
+        markSynthetic(new ir.SymbolLiteral(memberName));
+    ir.Expression positional =
+        markSynthetic(new ir.ListLiteral(callArguments.positional));
+    ir.Expression named =
+        markSynthetic(new ir.MapLiteral(callArguments.named.map((e) {
+      return new ir.MapEntry(
+          markSynthetic(new ir.SymbolLiteral(e.name)), e.value);
+    }).toList()));
     if (candidateTarget is FunctionElement) {
       // Ensure [candidateTarget] has been resolved.
       possiblyErroneousFunctionToIr(candidateTarget);
@@ -72,13 +76,15 @@ abstract class UnresolvedVisitor {
         candidateTarget.hasFunctionSignature) {
       List<ir.Expression> existingArgumentsList = <ir.Expression>[];
       candidateTarget.functionSignature.forEachParameter((param) {
-        existingArgumentsList.add(new ir.StringLiteral(param.name));
+        existingArgumentsList
+            .add(markSynthetic(new ir.StringLiteral(param.name)));
       });
-      existingArguments = new ir.ListLiteral(existingArgumentsList);
+      existingArguments =
+          markSynthetic(new ir.ListLiteral(existingArgumentsList));
     } else {
       existingArguments = new ir.NullLiteral();
     }
-    return new ir.Throw(new ir.StaticInvocation(
+    ir.Expression construction = markSynthetic(new ir.StaticInvocation(
         exceptionBuilder,
         new ir.Arguments(<ir.Expression>[
           receiver,
@@ -87,6 +93,12 @@ abstract class UnresolvedVisitor {
           named,
           existingArguments
         ])));
+    return new ir.Throw(construction);
+  }
+
+  ir.Expression markSynthetic(ir.Expression expression) {
+    kernel.syntheticNodes.add(expression);
+    return expression;
   }
 
   /// Throws a NoSuchMethodError for an unresolved getter named [name].
@@ -272,7 +284,7 @@ abstract class UnresolvedVisitor {
       Send node, MethodElement getter, Element element, Node rhs, _) {
     var accessor = new ClassStaticAccessor(
         this, getter.name, possiblyErroneousFunctionToIr(getter), null);
-    return accessor.buildNullAwareAssignment(visitForValue(rhs),
+    return accessor.buildNullAwareAssignment(visitForValue(rhs), null,
         voidContext: isVoidContext);
   }
 
@@ -457,7 +469,7 @@ abstract class UnresolvedVisitor {
   ir.Expression visitUnresolvedSuperSetterSetIfNull(
       Send node, MethodElement getter, Element element, Node rhs, _) {
     return buildUnresolvedSuperPropertyAccessor('${node.selector}', getter)
-        .buildNullAwareAssignment(visitForValue(rhs));
+        .buildNullAwareAssignment(visitForValue(rhs), null);
   }
 
   ir.Expression visitUnresolvedSuperUnary(
@@ -533,26 +545,26 @@ abstract class UnresolvedVisitor {
       Send node, MethodElement getter, Element element, Node rhs, _) {
     var accessor = new TopLevelStaticAccessor(
         this, getter.name, possiblyErroneousFunctionToIr(getter), null);
-    return accessor.buildNullAwareAssignment(visitForValue(rhs),
+    return accessor.buildNullAwareAssignment(visitForValue(rhs), null,
         voidContext: isVoidContext);
   }
 
   ir.Expression visitUnresolvedSuperGetterIndexSetIfNull(Send node,
       Element element, MethodElement setter, Node index, Node rhs, _) {
     return buildUnresolvedSuperIndexAccessor(index, element)
-        .buildNullAwareAssignment(visitForValue(rhs));
+        .buildNullAwareAssignment(visitForValue(rhs), null);
   }
 
   ir.Expression visitUnresolvedSuperSetterIndexSetIfNull(Send node,
       MethodElement getter, Element element, Node index, Node rhs, _) {
     return buildUnresolvedSuperIndexAccessor(index, element)
-        .buildNullAwareAssignment(visitForValue(rhs));
+        .buildNullAwareAssignment(visitForValue(rhs), null);
   }
 
   ir.Expression visitUnresolvedSuperIndexSetIfNull(
       Send node, Element element, Node index, Node rhs, _) {
     return buildUnresolvedSuperIndexAccessor(index, element)
-        .buildNullAwareAssignment(visitForValue(rhs));
+        .buildNullAwareAssignment(visitForValue(rhs), null);
   }
 
   ir.Expression visitUnresolvedSuperSet(

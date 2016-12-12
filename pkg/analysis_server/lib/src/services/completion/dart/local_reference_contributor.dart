@@ -17,6 +17,8 @@ import 'package:analysis_server/src/services/completion/dart/optype.dart';
 import 'package:analysis_server/src/services/correction/strings.dart';
 import 'package:analysis_server/src/utilities/documentation.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
+import 'package:analyzer/dart/ast/standard_ast_factory.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -29,8 +31,9 @@ import '../../../protocol_server.dart'
 
 const DYNAMIC = 'dynamic';
 
-final TypeName NO_RETURN_TYPE = new TypeName(
-    new SimpleIdentifier(new StringToken(TokenType.IDENTIFIER, '', 0)), null);
+final TypeName NO_RETURN_TYPE = astFactory.typeName(
+    astFactory.simpleIdentifier(new StringToken(TokenType.IDENTIFIER, '', 0)),
+    null);
 
 /**
 * Create a new protocol Element for inclusion in a completion suggestion.
@@ -209,23 +212,22 @@ class _LocalVisitor extends LocalDeclarationVisitor {
 
     // If user typed identifier starting with '_'
     // then do not suppress the relevance of private members
-    var contents = request.context.getContents(request.source);
-    if (contents != null) {
-      String data = contents.data;
-      int offset = request.offset;
-      if (data != null && 0 < offset && offset <= data.length) {
-        bool isIdentifierChar(int index) {
-          int code = data.codeUnitAt(index);
-          return isLetterOrDigit(code) || code == CHAR_UNDERSCORE;
-        }
+    var data = request.result != null
+        ? request.result.content
+        : request.sourceContents;
+    int offset = request.offset;
+    if (data != null && 0 < offset && offset <= data.length) {
+      bool isIdentifierChar(int index) {
+        int code = data.codeUnitAt(index);
+        return isLetterOrDigit(code) || code == CHAR_UNDERSCORE;
+      }
 
-        if (isIdentifierChar(offset - 1)) {
-          while (offset > 0 && isIdentifierChar(offset - 1)) {
-            --offset;
-          }
-          if (data.codeUnitAt(offset) == CHAR_UNDERSCORE) {
-            privateMemberRelevance = null;
-          }
+      if (isIdentifierChar(offset - 1)) {
+        while (offset > 0 && isIdentifierChar(offset - 1)) {
+          --offset;
+        }
+        if (data.codeUnitAt(offset) == CHAR_UNDERSCORE) {
+          privateMemberRelevance = null;
         }
       }
     }
@@ -519,8 +521,10 @@ class _LocalVisitor extends LocalDeclarationVisitor {
       {bool isAbstract: false,
       bool isDeprecated: false,
       int relevance: DART_RELEVANCE_DEFAULT}) {
-    relevance = optype.returnValueSuggestionsFilter(
-        enumDeclaration.element?.type, relevance);
+    ClassElement classElement =
+        resolutionMap.elementDeclaredByEnumDeclaration(enumDeclaration);
+    relevance =
+        optype.returnValueSuggestionsFilter(classElement?.type, relevance);
     if (relevance != null) {
       _addLocalSuggestion_enumConstant(constantDeclaration, enumDeclaration,
           isAbstract: isAbstract,

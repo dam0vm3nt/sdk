@@ -26,7 +26,11 @@ import 'call_structure.dart' show CallStructure;
 import 'selector.dart' show Selector;
 import 'world_builder.dart' show ReceiverConstraint;
 
-enum DynamicUseKind { INVOKE, GET, SET, }
+enum DynamicUseKind {
+  INVOKE,
+  GET,
+  SET,
+}
 
 /// The use of a dynamic property. [selector] defined the name and kind of the
 /// property and [mask] defines the known constraint for the object on which
@@ -73,7 +77,9 @@ enum StaticUseKind {
   CLOSURE,
   CONSTRUCTOR_INVOKE,
   CONST_CONSTRUCTOR_INVOKE,
+  REDIRECTION,
   DIRECT_INVOKE,
+  DIRECT_USE,
 }
 
 /// Statically known use of an [Element].
@@ -266,9 +272,12 @@ class StaticUse {
         element, StaticUseKind.CONST_CONSTRUCTOR_INVOKE, type);
   }
 
-  /// Constructor redirection to [element].
-  factory StaticUse.constructorRedirect(ConstructorElement element) {
-    return new StaticUse.internal(element, StaticUseKind.GENERAL);
+  /// Constructor redirection to [element] on [type].
+  factory StaticUse.constructorRedirect(
+      ConstructorElement element, InterfaceType type) {
+    assert(invariant(element, type != null,
+        message: "No type provided for constructor invocation."));
+    return new StaticUse.internal(element, StaticUseKind.REDIRECTION, type);
   }
 
   /// Initialization of an instance field [element].
@@ -307,6 +316,11 @@ class StaticUse {
     return new StaticUse.internal(element, StaticUseKind.GENERAL);
   }
 
+  /// Direct use of [element] as done with `--analyze-all` and `--analyze-main`.
+  factory StaticUse.directUse(Element element) {
+    return new StaticUse.internal(element, StaticUseKind.DIRECT_USE);
+  }
+
   bool operator ==(other) {
     if (identical(this, other)) return true;
     if (other is! StaticUse) return false;
@@ -323,6 +337,8 @@ enum TypeUseKind {
   CATCH_TYPE,
   TYPE_LITERAL,
   INSTANTIATION,
+  MIRROR_INSTANTIATION,
+  NATIVE_INSTANTIATION,
 }
 
 /// Use of a [DartType].
@@ -364,6 +380,16 @@ class TypeUse {
   /// [type] used in an instantiation, like `new T();`.
   factory TypeUse.instantiation(InterfaceType type) {
     return new TypeUse.internal(type, TypeUseKind.INSTANTIATION);
+  }
+
+  /// [type] used in an instantiation through mirrors.
+  factory TypeUse.mirrorInstantiation(InterfaceType type) {
+    return new TypeUse.internal(type, TypeUseKind.MIRROR_INSTANTIATION);
+  }
+
+  /// [type] used in a native instantiation.
+  factory TypeUse.nativeInstantiation(InterfaceType type) {
+    return new TypeUse.internal(type, TypeUseKind.NATIVE_INSTANTIATION);
   }
 
   bool operator ==(other) {

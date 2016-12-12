@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/exception/exception.dart';
@@ -30,19 +31,11 @@ import 'package:analyzer/src/task/dart_work_manager.dart';
 import 'package:analyzer/src/task/driver.dart';
 import 'package:analyzer/src/task/incremental_element_builder.dart';
 import 'package:analyzer/src/task/manager.dart';
-import 'package:analyzer/src/task/model.dart';
 import 'package:analyzer/task/dart.dart';
 import 'package:analyzer/task/general.dart';
 import 'package:analyzer/task/html.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:html/dom.dart' show Document;
-
-/**
- * The descriptor used to associate exclude patterns with an analysis context in
- * configuration data.
- */
-final ListResultDescriptor<String> CONTEXT_EXCLUDES =
-    new ListResultDescriptorImpl('CONTEXT_EXCLUDES', const <String>[]);
 
 /**
  * Type of callback functions used by PendingFuture. Functions of this type
@@ -247,6 +240,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
    * Initialize a newly created analysis context.
    */
   AnalysisContextImpl() {
+    AnalysisEngine.instance.processRequiredPlugins();
     _privatePartition = new UniversalCachePartition(this);
     _cache = createCacheFromSourceFactory(null);
     _taskManager = AnalysisEngine.instance.taskManager;
@@ -281,15 +275,15 @@ class AnalysisContextImpl implements InternalAnalysisContext {
             options.generateImplicitErrors ||
         this._options.generateSdkErrors != options.generateSdkErrors ||
         this._options.dart2jsHint != options.dart2jsHint ||
+        _notEqual(this._options.errorProcessors, options.errorProcessors) ||
+        _notEqual(this._options.excludePatterns, options.excludePatterns) ||
         (this._options.hint && !options.hint) ||
         (this._options.lint && !options.lint) ||
+        _notEqual(this._options.lintRules, options.lintRules) ||
         this._options.preserveComments != options.preserveComments ||
         this._options.strongMode != options.strongMode ||
         this._options.enableAssertInitializer !=
             options.enableAssertInitializer ||
-        this._options.enableAssertMessage != options.enableAssertMessage ||
-        this._options.enableInitializingFormalAccess !=
-            options.enableInitializingFormalAccess ||
         this._options.enableLazyAssignmentOperators !=
             options.enableLazyAssignmentOperators ||
         ((options is AnalysisOptionsImpl)
@@ -306,28 +300,27 @@ class AnalysisContextImpl implements InternalAnalysisContext {
             : false) ||
         this._options.enableStrictCallChecks !=
             options.enableStrictCallChecks ||
-        this._options.enableGenericMethods != options.enableGenericMethods ||
-        this._options.enableSuperMixins != options.enableSuperMixins;
+        this._options.enableSuperMixins != options.enableSuperMixins ||
+        this._options.patchPlatform != options.patchPlatform;
     this._options.analyzeFunctionBodiesPredicate =
         options.analyzeFunctionBodiesPredicate;
     this._options.generateImplicitErrors = options.generateImplicitErrors;
     this._options.generateSdkErrors = options.generateSdkErrors;
     this._options.dart2jsHint = options.dart2jsHint;
-    this._options.enableGenericMethods = options.enableGenericMethods;
     this._options.enableAssertInitializer = options.enableAssertInitializer;
-    this._options.enableAssertMessage = options.enableAssertMessage;
     this._options.enableStrictCallChecks = options.enableStrictCallChecks;
-    this._options.enableInitializingFormalAccess =
-        options.enableInitializingFormalAccess;
     this._options.enableLazyAssignmentOperators =
         options.enableLazyAssignmentOperators;
     this._options.enableSuperMixins = options.enableSuperMixins;
     this._options.enableTiming = options.enableTiming;
+    this._options.errorProcessors = options.errorProcessors;
+    this._options.excludePatterns = options.excludePatterns;
     this._options.hint = options.hint;
     this._options.incremental = options.incremental;
     this._options.incrementalApi = options.incrementalApi;
     this._options.incrementalValidation = options.incrementalValidation;
     this._options.lint = options.lint;
+    this._options.lintRules = options.lintRules;
     this._options.preserveComments = options.preserveComments;
     if (this._options.strongMode != options.strongMode) {
       _typeSystem = null;
@@ -336,6 +329,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     this._options.trackCacheDependencies = options.trackCacheDependencies;
     this._options.disableCacheFlushing = options.disableCacheFlushing;
     this._options.finerGrainedInvalidation = options.finerGrainedInvalidation;
+    this._options.patchPlatform = options.patchPlatform;
     if (options is AnalysisOptionsImpl) {
       this._options.strongModeHints = options.strongModeHints;
       this._options.implicitCasts = options.implicitCasts;
@@ -720,6 +714,12 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     CacheEntry entry = getCacheEntry(target);
     CacheState state = entry.getState(descriptor);
     if (state == CacheState.FLUSHED || state == CacheState.INVALID) {
+      // Check the result provider.
+      bool success = aboutToComputeResult(entry, descriptor);
+      if (success) {
+        return entry.getValue(descriptor);
+      }
+      // Compute the result.
       driver.computeResult(target, descriptor);
       entry = getCacheEntry(target);
     }
@@ -841,6 +841,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     return getResult(target, COMPILATION_UNIT_ELEMENT);
   }
 
+  @deprecated
   @override
   Object/*=V*/ getConfigurationData/*<V>*/(ResultDescriptor/*<V>*/ key) =>
       (_configurationData[key] ?? key?.defaultValue) as Object/*=V*/;
@@ -1301,6 +1302,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     }
   }
 
+  @deprecated
   @override
   void setConfigurationData(ResultDescriptor key, Object data) {
     _configurationData[key] = data;
@@ -1690,6 +1692,19 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     AnalysisEngine.instance.logger.logInformation(message);
   }
 
+  bool _notEqual/*<T>*/(List/*<T>*/ first, List/*<T>*/ second) {
+    int length = first.length;
+    if (length != second.length) {
+      return true;
+    }
+    for (int i = 0; i < length; i++) {
+      if (first[i] != second[i]) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Notify all of the analysis listeners that the errors associated with the
    * given [source] has been updated to the given [errors].
@@ -1929,9 +1944,12 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       }
       // if validation, remember the result, but throw it away
       if (analysisOptions.incrementalValidation) {
-        incrementalResolutionValidation_lastUnitSource = oldUnit.element.source;
+        CompilationUnitElement compilationUnitElement =
+            resolutionMap.elementDeclaredByCompilationUnit(oldUnit);
+        incrementalResolutionValidation_lastUnitSource =
+            compilationUnitElement.source;
         incrementalResolutionValidation_lastLibrarySource =
-            oldUnit.element.library.source;
+            compilationUnitElement.library.source;
         incrementalResolutionValidation_lastUnit = oldUnit;
         return false;
       }

@@ -11,6 +11,7 @@ import 'package:analysis_server/src/services/completion/completion_core.dart';
 import 'package:analysis_server/src/services/completion/completion_performance.dart';
 import 'package:analysis_server/src/services/completion/dart/completion_manager.dart';
 import 'package:analysis_server/src/services/completion/dart/imported_reference_contributor.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/src/task/dart.dart';
 import 'package:test/test.dart';
@@ -56,6 +57,7 @@ part '$testFile';
 
     // Build the request
     CompletionRequestImpl baseRequest = new CompletionRequestImpl(
+        null,
         context,
         provider,
         searchEngine,
@@ -75,7 +77,8 @@ part '$testFile';
     var directives = request.target.unit.directives;
 
     // Assert that the import does not have an export namespace
-    expect(directives[0].element?.library?.exportNamespace, isNull);
+    Element element = resolutionMap.elementDeclaredByDirective(directives[0]);
+    expect(element?.library?.exportNamespace, isNull);
 
     // Resolve directives
     var importCompleter = new Completer<List<ImportElement>>();

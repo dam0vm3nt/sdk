@@ -5,6 +5,7 @@
 library analyzer.test.generated.simple_resolver_test;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -656,9 +657,6 @@ class A {
   }
 
   void test_fieldFormalParameter() {
-    AnalysisOptionsImpl options = new AnalysisOptionsImpl();
-    options.enableInitializingFormalAccess = true;
-    resetWithOptions(options);
     Source source = addSource(r'''
 class A {
   int x;
@@ -751,7 +749,12 @@ class C extends B with M1, M2 {
     ExpressionStatement stmt = body.block.statements[0];
     AssignmentExpression assignment = stmt.expression;
     SimpleIdentifier leftHandSide = assignment.leftHandSide;
-    expect(leftHandSide.staticElement.enclosingElement.name, 'M2');
+    expect(
+        resolutionMap
+            .staticElementForIdentifier(leftHandSide)
+            .enclosingElement
+            .name,
+        'M2');
     expect(leftHandSide.auxiliaryElements.staticElement.enclosingElement.name,
         'M2');
   }
@@ -788,7 +791,11 @@ void main() {
     AssignmentExpression assignment = stmt.expression;
     PropertyAccess propertyAccess = assignment.leftHandSide;
     expect(
-        propertyAccess.propertyName.staticElement.enclosingElement.name, 'M2');
+        resolutionMap
+            .staticElementForIdentifier(propertyAccess.propertyName)
+            .enclosingElement
+            .name,
+        'M2');
     expect(
         propertyAccess
             .propertyName.auxiliaryElements.staticElement.enclosingElement.name,
@@ -820,7 +827,8 @@ class C extends B with M1, M2 {
     BlockFunctionBody body = f.body;
     ReturnStatement stmt = body.block.statements[0];
     SimpleIdentifier x = stmt.expression;
-    expect(x.staticElement.enclosingElement.name, 'M2');
+    expect(resolutionMap.staticElementForIdentifier(x).enclosingElement.name,
+        'M2');
   }
 
   void test_getter_fromMixins_property_access() {
@@ -848,7 +856,11 @@ void main() {
     VariableDeclarationStatement stmt = body.block.statements[0];
     PropertyAccess propertyAccess = stmt.variables.variables[0].initializer;
     expect(
-        propertyAccess.propertyName.staticElement.enclosingElement.name, 'M2');
+        resolutionMap
+            .staticElementForIdentifier(propertyAccess.propertyName)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_getterAndSetterWithDifferentTypes() {
@@ -1538,7 +1550,12 @@ void main() {
     BlockFunctionBody body = main.functionExpression.body;
     ExpressionStatement stmt = body.block.statements[0];
     MethodInvocation expr = stmt.expression;
-    expect(expr.methodName.staticElement.enclosingElement.name, 'M2');
+    expect(
+        resolutionMap
+            .staticElementForIdentifier(expr.methodName)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_method_fromMixins_bare_identifier() {
@@ -1566,7 +1583,12 @@ class C extends B with M1, M2 {
     ExpressionStatement stmt = body.block.statements[0];
     MethodInvocation invocation = stmt.expression;
     SimpleIdentifier methodName = invocation.methodName;
-    expect(methodName.staticElement.enclosingElement.name, 'M2');
+    expect(
+        resolutionMap
+            .staticElementForIdentifier(methodName)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_method_fromMixins_invked_from_outside_class() {
@@ -1593,7 +1615,12 @@ void main() {
     BlockFunctionBody body = main.functionExpression.body;
     ExpressionStatement stmt = body.block.statements[0];
     MethodInvocation invocation = stmt.expression;
-    expect(invocation.methodName.staticElement.enclosingElement.name, 'M2');
+    expect(
+        resolutionMap
+            .staticElementForIdentifier(invocation.methodName)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_method_fromSuperclassMixin() {
@@ -1683,7 +1710,12 @@ class C extends B with M1, M2 {
     ExpressionStatement stmt = body.block.statements[0];
     AssignmentExpression assignment = stmt.expression;
     SimpleIdentifier leftHandSide = assignment.leftHandSide;
-    expect(leftHandSide.staticElement.enclosingElement.name, 'M2');
+    expect(
+        resolutionMap
+            .staticElementForIdentifier(leftHandSide)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_setter_fromMixins_property_access() {
@@ -1712,7 +1744,11 @@ void main() {
     AssignmentExpression assignment = stmt.expression;
     PropertyAccess propertyAccess = assignment.leftHandSide;
     expect(
-        propertyAccess.propertyName.staticElement.enclosingElement.name, 'M2');
+        resolutionMap
+            .staticElementForIdentifier(propertyAccess.propertyName)
+            .enclosingElement
+            .name,
+        'M2');
   }
 
   void test_setter_inherited() {

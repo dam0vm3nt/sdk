@@ -482,8 +482,7 @@ class IncrementalResolver {
           _definingLibrary,
           _typeProvider,
           new InheritanceManager(_definingLibrary),
-          _context.analysisOptions.enableSuperMixins,
-          _context.analysisOptions.enableAssertMessage);
+          _context.analysisOptions.enableSuperMixins);
       if (_resolutionContext.enclosingClassDeclaration != null) {
         errorVerifier.visitClassDeclarationIncrementally(
             _resolutionContext.enclosingClassDeclaration);
@@ -665,6 +664,14 @@ class PoorMansIncrementalResolver {
             } else if (oldParent is FunctionBody && newParent is FunctionBody) {
               if (oldParent is BlockFunctionBody &&
                   newParent is BlockFunctionBody) {
+                if (oldParent.isAsynchronous != newParent.isAsynchronous) {
+                  logger.log('Failure: body async mismatch.');
+                  return false;
+                }
+                if (oldParent.isGenerator != newParent.isGenerator) {
+                  logger.log('Failure: body generator mismatch.');
+                  return false;
+                }
                 oldNode = oldParent;
                 newNode = newParent;
                 found = true;
@@ -743,7 +750,6 @@ class PoorMansIncrementalResolver {
       Parser parser = new Parser(_unitSource, errorListener);
       AnalysisOptions options = _unitElement.context.analysisOptions;
       parser.parseGenericMethodComments = options.strongMode;
-      parser.parseGenericMethods = options.enableGenericMethods;
       CompilationUnit unit = parser.parseCompilationUnit(token);
       _newParseErrors = errorListener.errors;
       return unit;

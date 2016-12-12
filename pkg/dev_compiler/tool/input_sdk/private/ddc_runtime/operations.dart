@@ -552,25 +552,20 @@ assert_(condition) => JS(
   if (!$condition) $throwAssertionError();
 })()''');
 
-final _stack = JS('', 'new WeakMap()');
+var _stack = null;
 @JSExportName('throw')
 throw_(obj) => JS(
     '',
     '''(() => {
-  if ($obj != null && (typeof $obj == 'object' || typeof $obj == 'function')) {
-    // TODO(jmesserly): couldn't we store the most recent stack in a single
-    // variable? There should only be one active stack trace. That would
-    // allow it to work for things like strings and numbers.
-    $_stack.set($obj, new Error());
-  }
-  throw $obj;
+    $_stack = new Error();
+    throw $obj;
 })()''');
 
 getError(exception) => JS(
     '',
     '''(() => {
-  var stack = $_stack.get($exception);
-  return stack !== void 0 ? stack : $exception;
+  var stack = $_stack;
+  return stack !== null ? stack : $exception;
 })()''');
 
 // This is a utility function: it is only intended to be called from dev
@@ -706,8 +701,7 @@ final constantLists = JS('', 'new Map()');
 ///
 /// Canonicalize a constant list
 ///
-@JSExportName('constList')
-constList_(elements, elementType) => JS(
+constList(elements, elementType) => JS(
     '',
     '''(() => {
   function lookupNonTerminal(map, key) {
@@ -795,7 +789,9 @@ runtimeType(obj) {
   // Delegate to the (possibly user-defined) method on the object.
   var extension = getExtensionType(obj);
   if (extension != null) {
-    return JS('', '#[dartx.runtimeType]', obj);
+    result = JS('', '#[dartx.runtimeType]', obj);
+    // If extension doesn't override runtimeType, return the extension type.
+    return result ?? wrapType(extension);
   }
   if (JS('bool', 'typeof # == "function"', obj)) {
     return wrapType(getReifiedType(obj));
@@ -845,3 +841,9 @@ _canonicalMember(obj, name) {
   }
   return name;
 }
+
+/// Emulates the implicit "loadLibrary" function provided by a deferred library.
+///
+/// Libraries are not actually deferred in DDC, so this just returns a future
+/// that completes immediately.
+Future loadLibrary() => new Future.value();

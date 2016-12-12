@@ -7,6 +7,7 @@ library analyzer.src.task.dart;
 import 'dart:collection';
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
@@ -16,13 +17,14 @@ import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/src/context/cache.dart';
 import 'package:analyzer/src/dart/ast/ast.dart'
-    show NamespaceDirectiveImpl, UriBasedDirectiveImpl;
+    show NamespaceDirectiveImpl, UriBasedDirectiveImpl, UriValidationCode;
 import 'package:analyzer/src/dart/ast/utilities.dart';
 import 'package:analyzer/src/dart/element/builder.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/resolver/inheritance_manager.dart';
 import 'package:analyzer/src/dart/scanner/reader.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart';
+import 'package:analyzer/src/dart/sdk/patch.dart';
 import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/error/pending_error.dart';
 import 'package:analyzer/src/generated/constant.dart';
@@ -1327,7 +1329,11 @@ class BuildEnumMemberElementsTask extends SourceBasedAnalysisTask {
     }
 
     EnumDeclaration firstEnum = findFirstEnum();
-    if (firstEnum != null && firstEnum.element.accessors.isEmpty) {
+    if (firstEnum != null &&
+        resolutionMap
+            .elementDeclaredByEnumDeclaration(firstEnum)
+            .accessors
+            .isEmpty) {
       EnumMemberBuilder builder = new EnumMemberBuilder(typeProvider);
       unit.accept(builder);
     }
@@ -1502,7 +1508,8 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
     int partLength = partUnits.length;
     for (int i = 0; i < partLength; i++) {
       CompilationUnit partUnit = partUnits[i];
-      Source partSource = partUnit.element.source;
+      Source partSource =
+          resolutionMap.elementDeclaredByCompilationUnit(partUnit).source;
       partUnitMap[partSource] = partUnit;
     }
     //
@@ -1550,28 +1557,43 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
           // name as the library.
           //
           if (context.exists(partSource)) {
-            String partLibraryName =
-                _getPartLibraryName(partSource, partUnit, directivesToResolve);
-            if (partLibraryName == null) {
+            _NameOrSource nameOrSource = _getPartLibraryNameOrUri(
+                context, partSource, partUnit, directivesToResolve);
+            if (nameOrSource == null) {
               errors.add(new AnalysisError(
                   librarySource,
                   partUri.offset,
                   partUri.length,
                   CompileTimeErrorCode.PART_OF_NON_PART,
                   [partUri.toSource()]));
-            } else if (libraryNameNode == null) {
-              if (partsLibraryName == _UNKNOWN_LIBRARY_NAME) {
-                partsLibraryName = partLibraryName;
-              } else if (partsLibraryName != partLibraryName) {
-                partsLibraryName = null;
+            } else {
+              String name = nameOrSource.name;
+              if (name != null) {
+                if (libraryNameNode == null) {
+                  if (partsLibraryName == _UNKNOWN_LIBRARY_NAME) {
+                    partsLibraryName = name;
+                  } else if (partsLibraryName != name) {
+                    partsLibraryName = null;
+                  }
+                } else if (libraryNameNode.name != name) {
+                  errors.add(new AnalysisError(
+                      librarySource,
+                      partUri.offset,
+                      partUri.length,
+                      StaticWarningCode.PART_OF_DIFFERENT_LIBRARY,
+                      [libraryNameNode.name, name]));
+                }
+              } else {
+                Source source = nameOrSource.source;
+                if (source != librarySource) {
+                  errors.add(new AnalysisError(
+                      librarySource,
+                      partUri.offset,
+                      partUri.length,
+                      StaticWarningCode.PART_OF_DIFFERENT_LIBRARY,
+                      [librarySource.uri.toString(), source.uri.toString()]));
+                }
               }
-            } else if (libraryNameNode.name != partLibraryName) {
-              errors.add(new AnalysisError(
-                  librarySource,
-                  partUri.offset,
-                  partUri.length,
-                  StaticWarningCode.PART_OF_DIFFERENT_LIBRARY,
-                  [libraryNameNode.name, partLibraryName]));
             }
           }
           if (entryPoint == null) {
@@ -1626,7 +1648,7 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
     if (libraryElement == null) {
       libraryElement =
           new LibraryElementImpl.forNode(owningContext, libraryNameNode);
-      libraryElement.synthetic = modificationTime < 0;
+      libraryElement.isSynthetic = modificationTime < 0;
       libraryElement.definingCompilationUnit = definingCompilationUnitElement;
       libraryElement.entryPoint = entryPoint;
       libraryElement.parts = sourcedCompilationUnits;
@@ -1678,7 +1700,10 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
    * Return the name of the library that the given part is declared to be a
    * part of, or `null` if the part does not contain a part-of directive.
    */
-  String _getPartLibraryName(Source partSource, CompilationUnit partUnit,
+  _NameOrSource _getPartLibraryNameOrUri(
+      AnalysisContext context,
+      Source partSource,
+      CompilationUnit partUnit,
       List<Directive> directivesToResolve) {
     NodeList<Directive> directives = partUnit.directives;
     int length = directives.length;
@@ -1688,7 +1713,15 @@ class BuildLibraryElementTask extends SourceBasedAnalysisTask {
         directivesToResolve.add(directive);
         LibraryIdentifier libraryName = directive.libraryName;
         if (libraryName != null) {
-          return libraryName.name;
+          return new _NameOrSource(libraryName.name, null);
+        }
+        String uri = directive.uri?.stringValue;
+        if (uri != null) {
+          Source librarySource =
+              context.sourceFactory.resolveUri(partSource, uri);
+          if (librarySource != null) {
+            return new _NameOrSource(null, librarySource);
+          }
         }
       }
     }
@@ -2211,8 +2244,10 @@ class ComputeLibraryCycleTask extends SourceBasedAnalysisTask {
     // re-run if anything reachable from this target has been invalidated,
     // and the invalidation code (invalidateLibraryCycles) will ensure that
     // element model results will be re-used here only if they are still valid.
-    if (context.analysisOptions.strongMode) {
-      LibraryElement library = getRequiredInput(LIBRARY_ELEMENT_INPUT);
+    LibraryElement library = getRequiredInput(LIBRARY_ELEMENT_INPUT);
+    if (context.analysisOptions.strongMode &&
+        !LibraryElementImpl.hasResolutionCapability(
+            library, LibraryResolutionCapability.resolvedTypeNames)) {
       List<LibraryElement> component = library.libraryCycle;
       Set<LibraryElement> filter = component.toSet();
       Set<CompilationUnitElement> deps = new Set<CompilationUnitElement>();
@@ -3417,7 +3452,9 @@ class InferInstanceMembersInUnitTask extends SourceBasedAnalysisTask {
     //
     if (context.analysisOptions.strongMode) {
       InstanceMemberInferrer inferrer = new InstanceMemberInferrer(
-          typeProvider, new InheritanceManager(unit.element.library),
+          typeProvider,
+          new InheritanceManager(
+              resolutionMap.elementDeclaredByCompilationUnit(unit).library),
           typeSystem: context.typeSystem);
       inferrer.inferCompilationUnit(unit.element);
     }
@@ -3482,7 +3519,8 @@ abstract class InferStaticVariableTask extends ConstantEvaluationAnalysisTask {
     AstNode node = new NodeLocator2(offset).searchWithin(unit);
     if (node == null) {
       Source variableSource = variable.source;
-      Source unitSource = unit.element.source;
+      Source unitSource =
+          resolutionMap.elementDeclaredByCompilationUnit(unit).source;
       if (variableSource != unitSource) {
         throw new AnalysisException(
             "Failed to find the AST node for the variable "
@@ -3497,7 +3535,8 @@ abstract class InferStaticVariableTask extends ConstantEvaluationAnalysisTask {
         node.getAncestor((AstNode ancestor) => ancestor is VariableDeclaration);
     if (declaration == null || declaration.name != node) {
       Source variableSource = variable.source;
-      Source unitSource = unit.element.source;
+      Source unitSource =
+          resolutionMap.elementDeclaredByCompilationUnit(unit).source;
       if (variableSource != unitSource) {
         if (declaration == null) {
           throw new AnalysisException(
@@ -4017,10 +4056,15 @@ class ParseDartTask extends SourceBasedAnalysisTask {
     parser.enableAssertInitializer = options.enableAssertInitializer;
     parser.parseFunctionBodies =
         options.analyzeFunctionBodiesPredicate(_source);
-    parser.parseGenericMethods = options.enableGenericMethods;
     parser.parseGenericMethodComments = options.strongMode;
+    parser.enableUriInPartOf = options.enableUriInPartOf;
     CompilationUnit unit = parser.parseCompilationUnit(tokenStream);
     unit.lineInfo = lineInfo;
+
+    if (options.patchPlatform != 0 && _source.uri.scheme == 'dart') {
+      new SdkPatcher().patch(context.sourceFactory.dartSdk,
+          options.patchPlatform, errorListener, _source, unit);
+    }
 
     bool hasNonPartOfDirective = false;
     bool hasPartOfDirective = false;
@@ -6198,8 +6242,7 @@ class VerifyUnitTask extends SourceBasedAnalysisTask {
         libraryElement,
         typeProvider,
         new InheritanceManager(libraryElement),
-        context.analysisOptions.enableSuperMixins,
-        context.analysisOptions.enableAssertMessage);
+        context.analysisOptions.enableSuperMixins);
     unit.accept(errorVerifier);
     //
     // Convert the pending errors into actual errors.
@@ -6232,8 +6275,8 @@ class VerifyUnitTask extends SourceBasedAnalysisTask {
    * Check the given [directive] to see if the referenced source exists and
    * report an error if it does not.
    */
-  void validateReferencedSource(UriBasedDirective directive) {
-    if (directive is NamespaceDirective) {
+  void validateReferencedSource(UriBasedDirectiveImpl directive) {
+    if (directive is NamespaceDirectiveImpl) {
       for (Configuration configuration in directive.configurations) {
         Source source = configuration.uriSource;
         StringLiteral uriLiteral = configuration.uri;
@@ -6370,6 +6413,18 @@ class _ImportSourceClosureTaskInput extends TaskInputImpl<List<Source>> {
   TaskInputBuilder<List<Source>> createBuilder() =>
       new _SourceClosureTaskInputBuilder(
           target, _SourceClosureKind.IMPORT, resultDescriptor);
+}
+
+/**
+ * An object holding either the name or the source associated with a part-of
+ * directive.
+ */
+class _NameOrSource {
+  final String name;
+
+  final Source source;
+
+  _NameOrSource(this.name, this.source);
 }
 
 /**

@@ -364,12 +364,16 @@ class VmCommand extends ProcessCommand {
 
 class AdbPrecompilationCommand extends Command {
   final String precompiledRunnerFilename;
+  final String processTestFilename;
   final String precompiledTestDirectory;
   final List<String> arguments;
   final bool useBlobs;
 
   AdbPrecompilationCommand._(this.precompiledRunnerFilename,
-      this.precompiledTestDirectory, this.arguments, this.useBlobs)
+                             this.processTestFilename,
+                             this.precompiledTestDirectory,
+                             this.arguments,
+                             this.useBlobs)
       : super._("adb_precompilation");
 
   void _buildHashCode(HashCodeBuilder builder) {
@@ -698,9 +702,12 @@ class CommandBuilder {
   }
 
   AdbPrecompilationCommand getAdbPrecompiledCommand(String precompiledRunner,
-      String testDirectory, List<String> arguments, bool useBlobs) {
+                                                    String processTest,
+                                                    String testDirectory,
+                                                    List<String> arguments,
+                                                    bool useBlobs) {
     var command = new AdbPrecompilationCommand._(
-        precompiledRunner, testDirectory, arguments, useBlobs);
+        precompiledRunner, processTest, testDirectory, arguments, useBlobs);
     return _getUniqueCommand(command);
   }
 
@@ -1657,6 +1664,18 @@ class KernelCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
     return !hasCrashed && !timedOut && exitCode == 0;
   }
 
+  Expectation result(TestCase testCase) {
+    Expectation result = super.result(testCase);
+    if (result.canBeOutcomeOf(Expectation.CRASH)) {
+      return Expectation.DARTK_CRASH;
+    } else if (result.canBeOutcomeOf(Expectation.TIMEOUT)) {
+      return Expectation.DARTK_TIMEOUT;
+    } else if (result.canBeOutcomeOf(Expectation.COMPILETIME_ERROR)) {
+      return Expectation.DARTK_COMPILETIME_ERROR;
+    }
+    return result;
+  }
+
   // If the compiler was able to produce a Kernel IR file we want to run the
   // result on the Dart VM.  We therefore mark the [KernelCompilationCommand] as
   // successful.
@@ -1747,7 +1766,7 @@ CommandOutput createCommandOutput(Command command, int exitCode, bool timedOut,
         command, exitCode, timedOut, stdout, stderr, time, pid);
   } else if (command is CompilationCommand) {
     if (command.displayName == 'precompiler' ||
-        command.displayName == 'dart2snapshot') {
+        command.displayName == 'app_jit') {
       return new VmCommandOutputImpl(
           command, exitCode, timedOut, stdout, stderr, time, pid);
     }
@@ -1847,6 +1866,7 @@ class RunningProcess {
   int pid;
   OutputLog stdout = new OutputLog();
   OutputLog stderr = new OutputLog();
+  List<String> diagnostics = <String>[];
   bool compilationSkipped = false;
   Completer<CommandOutput> completer;
 
@@ -1910,45 +1930,34 @@ class RunningProcess {
 
           // Close stdin so that tests that try to block on input will fail.
           process.stdin.close();
-          void timeoutHandler() {
+          timeoutHandler() async {
             timedOut = true;
             if (process != null) {
+              var executable, arguments;
               if (io.Platform.isLinux) {
-                // Try to print stack traces of the timed out process.
-                io.Process.run('eu-stack', ['-p ${process.pid}'])
-                .then((result) {
-                  io.stdout.write(result.stdout);
-                  io.stderr.write(result.stderr);
-                })
-                .catchError(
-                    (error) => print("Error when printing stack trace: $error"))
-                .whenComplete(() {
-                  if (!process.kill()) {
-                    DebugLogger.error("Unable to kill ${process.pid}");
-                  }
-                });
+                executable = 'eu-stack';
+                arguments = ['-p ${process.pid}'];
               } else if (io.Platform.isMacOS) {
                 // Try to print stack traces of the timed out process.
                 // `sample` is a sampling profiler but we ask it sample for 1
                 // second with a 4 second delay between samples so that we only
                 // sample the threads once.
-                io.Process.run('/usr/bin/sample',
-                               ['${process.pid}', '1', '4000', '-mayDie'])
-                .then((result) {
-                  io.stdout.write(result.stdout);
-                  io.stderr.write(result.stderr);
-                })
-                .catchError(
-                    (error) => print("Error when printing stack trace: $error"))
-                .whenComplete(() {
-                  if (!process.kill()) {
-                    DebugLogger.error("Unable to kill ${process.pid}");
-                  }
-                });
-              } else {
-                if (!process.kill()) {
-                  DebugLogger.error("Unable to kill ${process.pid}");
+                executable = '/usr/bin/sample';
+                arguments = ['${process.pid}', '1', '4000', '-mayDie'];
+              }
+
+              if (executable != null) {
+                try {
+                  var result = await io.Process.run(executable, arguments);
+                  diagnostics.addAll(result.stdout.split('\n'));
+                  diagnostics.addAll(result.stderr.split('\n'));
+                } catch (error) {
+                  diagnostics.add("Unable to capture stack traces: $error");
                 }
+              }
+
+              if (!process.kill()) {
+                diagnostics.add("Unable to kill ${process.pid}");
               }
             }
           }
@@ -2007,6 +2016,7 @@ class RunningProcess {
         new DateTime.now().difference(startTime),
         compilationSkipped,
         pid);
+    commandOutput.diagnostics.addAll(diagnostics);
     return commandOutput;
   }
 
@@ -2638,6 +2648,7 @@ class CommandExecutorImpl implements CommandExecutor {
   Future<CommandOutput> _runAdbPrecompilationCommand(
       AdbDevice device, AdbPrecompilationCommand command, int timeout) async {
     var runner = command.precompiledRunnerFilename;
+    var processTest = command.processTestFilename;
     var testdir = command.precompiledTestDirectory;
     var arguments = command.arguments;
     var devicedir = '/data/local/tmp/precompilation-testing';
@@ -2663,8 +2674,10 @@ class CommandExecutorImpl implements CommandExecutor {
     // timing).
     steps.add(() => device.runAdbCommand(
         ['push', runner, '$devicedir/dart_precompiled_runtime']));
+    steps.add(() => device.runAdbCommand(
+        ['push', processTest, '$devicedir/process_test']));
     steps.add(() => device.runAdbShellCommand(
-        ['chmod', '777', '$devicedir/dart_precompiled_runtime']));
+        ['chmod', '777', '$devicedir/dart_precompiled_runtime $devicedir/process_test']));
 
     for (var file in files) {
       steps.add(() => device

@@ -19,7 +19,6 @@ import 'js_backend/js_backend.dart' show JavaScriptBackend;
 import 'resolution/tree_elements.dart' show TreeElements;
 import 'tokens/token.dart' show Token;
 import 'tree/tree.dart';
-import 'universe/world_builder.dart' show CodegenWorldBuilder;
 import 'util/util.dart';
 
 class ClosureTask extends CompilerTask {
@@ -51,8 +50,10 @@ class ClosureTask extends CompilerTask {
 
   /// Create [ClosureClassMap]s for all live members.
   void createClosureClasses() {
-    compiler.enqueuer.resolution.processedElements
+    compiler.enqueuer.resolution.processedEntities
         .forEach((AstElement element) {
+      // TODO(johnniwinther): Typedefs should never be in processedElements.
+      if (element.isTypedef) return;
       ResolvedAst resolvedAst = element.resolvedAst;
       if (element.isAbstract) return;
       if (element.isField &&
@@ -122,7 +123,7 @@ class ClosureTask extends CompilerTask {
       throw new SpannableAssertionFailure(
           closure, 'Not a closure: $closure (${closure.runtimeType}).');
     }
-    compiler.enqueuer.codegen.forgetElement(cls);
+    compiler.enqueuer.codegen.forgetEntity(cls, compiler);
   }
 }
 

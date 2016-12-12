@@ -11,13 +11,17 @@
 */*/*/*/packages/*/*: Skip
 */*/*/*/*/packages/*/*: Skip
 
-# Don't run dev_compiler tests
-dev_compiler/test/*: Skip
-
 # Analyzer2dart is not maintained anymore.
 analyzer2dart/test/*: Skip
 
 dart_messages/test/dart_messages_test: Skip  # Requires a package root.
+
+# Skip dev_compiler codegen tests
+dev_compiler/test/codegen/*: Skip
+
+# Analyze dev_compiler but don't run its tests
+[ $compiler != dart2analyzer ]
+dev_compiler/test/*: Skip
 
 [ $compiler == dart2analyzer ]
 dev_compiler/gen/*: SkipByDesign
@@ -26,6 +30,7 @@ dev_compiler/gen/*: SkipByDesign
 mutation_observer: Skip # Issue 21149
 unittest/*: Skip # Issue 21949
 lookup_map/*: SkipByDesign
+front_end/*: SkipByDesign
 
 [ $runtime == vm && $mode == debug ]
 analysis_server/test/completion_test: Pass, Slow
@@ -53,6 +58,11 @@ compiler/tool/*: SkipByDesign # Only meant to run on vm
 front_end/tool/*: SkipByDesign # Only meant to run on vm
 lookup_map/test/version_check_test: SkipByDesign # Only meant to run in vm.
 typed_data/test/typed_buffers_test/01: Fail # Not supporting Int64List, Uint64List.
+front_end/test/memory_file_system_test: CompileTimeError # Issue 23773
+front_end/test/physical_file_system_test: SkipByDesign # Uses dart:io
+
+[ $compiler == dart2js && $fast_startup ]
+front_end/test/*: SkipByDesign # Tests written with dart:mirrors.
 
 [ $compiler == dart2js && $builder_tag != dart2js_analyzer ]
 analyzer/test/*: Skip # Issue 26813
@@ -65,6 +75,8 @@ crypto/test/base64_test: Slow, Pass
 [ $runtime == jsshell ]
 async/test/stream_zip_test: RuntimeError, OK # Issue 26103. Timers are not supported.
 lookup_map/test/lookup_map_test: RuntimeError, OK # Issue 26103. Timers are not supported.
+front_end/test/*: RuntimeError, OK # Issue 26103. Timers are not supported.
+kernel/test/*: RuntimeError, OK # Issue 26103. Timers are not supported.
 
 [ $compiler == dart2js && $runtime == drt ]
 async/test/stream_zip_test: RuntimeError, Pass # Issue 18548
@@ -76,6 +88,9 @@ async/test/stream_zip_test: SkipSlow # Times out. Issue 22050
 [ $runtime == ie10 ]
 analyzer/test/generated/java_core_test: Pass, Timeout # Issue 19747
 typed_data/test/typed_buffers_test/none: Fail # Issue 17607 (I put this here explicitly, since this is not the same as on ie9)
+
+[ $runtime == ie11 ]
+kernel/test/verify_test: Skip # Times out. Issue 27935
 
 [ $runtime == safarimobilesim ]
 # Unexplained errors only occuring on Safari 6.1 and earlier.
@@ -104,6 +119,9 @@ http_server/test/*: Fail, OK # Uses dart:io.
 observe/test/transformer_test: Fail, OK # Uses dart:io.
 observe/test/unique_message_test: SkipByDesign  # Uses dart:io.
 dart_messages/test/dart_messages_test: Skip  # Uses dart:io.
+
+[ $browser || $jscl ]
+kernel/test/*: SkipByDesign # Uses dart:io and bigints.
 
 [ $runtime == vm && ($arch == simarm64 || $arch == simarm || $arch == simarmv6 || $arch == simarmv5te || $arch == simmips || $arch == armv6 || $arch == armv5te) ]
 # Timeout. These are not unit tests. They do not run efficiently on our
@@ -179,7 +197,7 @@ analyzer/test/src/task/strong/inferred_type_test: Crash # Issue 24485
 analyzer/test/src/task/strong_mode_test: Crash # Issue 24485
 analyzer/test/src/task/yaml_test: Crash # Issue 24485
 
-[ $noopt || $runtime == dart_precompiled || $runtime == dart_app ]
+[ $noopt || $runtime == dart_precompiled ]
 *: SkipByDesign # The pkg test framework imports dart:mirrors.
 
 [ $compiler == dart2js && $cps_ir && $checked ]

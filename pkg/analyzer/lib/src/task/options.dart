@@ -10,11 +10,14 @@ import 'package:analyzer/analyzer.dart';
 import 'package:analyzer/plugin/options.dart';
 import 'package:analyzer/source/analysis_options_provider.dart';
 import 'package:analyzer/source/error_processor.dart';
-import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
+import 'package:analyzer/src/lint/config.dart';
+import 'package:analyzer/src/lint/linter.dart';
+import 'package:analyzer/src/lint/options_rule_validator.dart';
+import 'package:analyzer/src/lint/registry.dart';
 import 'package:analyzer/src/task/general.dart';
 import 'package:analyzer/src/util/yaml.dart';
 import 'package:analyzer/task/general.dart';
@@ -29,26 +32,12 @@ final ListResultDescriptor<AnalysisError> ANALYSIS_OPTIONS_ERRORS =
     new ListResultDescriptor<AnalysisError>(
         'ANALYSIS_OPTIONS_ERRORS', AnalysisError.NO_ERRORS);
 
-/**
- * The descriptor used to associate error processors with analysis contexts in
- * configuration data.
- */
-final ListResultDescriptor<ErrorProcessor> CONFIGURED_ERROR_PROCESSORS =
-    new ListResultDescriptor<ErrorProcessor>(
-        'configured.errors', const <ErrorProcessor>[]);
-
 final _OptionsProcessor _processor = new _OptionsProcessor();
 
 void applyToAnalysisOptions(
     AnalysisOptionsImpl options, Map<String, Object> optionMap) {
   _processor.applyToAnalysisOptions(options, optionMap);
 }
-
-/// Configure this [context] based on configuration details specified in
-/// the given [options].  If [options] is `null`, default values are applied.
-void configureContextOptions(
-        AnalysisContext context, Map<String, Object> options) =>
-    _processor.configure(context, options);
 
 /// `analyzer` analysis options constants.
 class AnalyzerOptions {
@@ -63,6 +52,7 @@ class AnalyzerOptions {
 
   static const String errors = 'errors';
   static const String exclude = 'exclude';
+  static const String include = 'include';
   static const String language = 'language';
   static const String plugins = 'plugins';
   static const String strong_mode = 'strong-mode';
@@ -173,7 +163,7 @@ class ErrorFilterOptionValidator extends OptionsValidator {
     if (_errorCodes == null) {
       _errorCodes = new HashSet<String>();
       // Engine codes.
-      _errorCodes.addAll(ErrorCode.values.map((ErrorCode code) => code.name));
+      _errorCodes.addAll(errorCodeValues.map((ErrorCode code) => code.name));
     }
     return _errorCodes;
   }
@@ -228,10 +218,12 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
       <ResultDescriptor>[ANALYSIS_OPTIONS_ERRORS, LINE_INFO],
       suitabilityFor: suitabilityFor);
 
-  final AnalysisOptionsProvider optionsProvider = new AnalysisOptionsProvider();
+  AnalysisOptionsProvider optionsProvider;
 
   GenerateOptionsErrorsTask(AnalysisContext context, AnalysisTarget target)
-      : super(context, target);
+      : super(context, target) {
+    optionsProvider = new AnalysisOptionsProvider(context?.sourceFactory);
+  }
 
   @override
   TaskDescriptor get descriptor => DESCRIPTOR;
@@ -243,16 +235,80 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
     String content = getRequiredInput(CONTENT_INPUT_NAME);
 
     List<AnalysisError> errors = <AnalysisError>[];
+    Source initialSource = source;
+    SourceSpan initialIncludeSpan;
+
+    // Validate the specified options and any included option files
+    void validate(Source source, Map<String, YamlNode> options) {
+      List<AnalysisError> validationErrors =
+          new OptionsFileValidator(source).validate(options);
+      if (initialIncludeSpan != null && validationErrors.isNotEmpty) {
+        for (AnalysisError error in validationErrors) {
+          var args = [
+            source.fullName,
+            error.offset.toString(),
+            (error.offset + error.length - 1).toString(),
+            error.message,
+          ];
+          errors.add(new AnalysisError(
+              initialSource,
+              initialIncludeSpan.start.column + 1,
+              initialIncludeSpan.length,
+              AnalysisOptionsWarningCode.INCLUDED_FILE_WARNING,
+              args));
+        }
+      } else {
+        errors.addAll(validationErrors);
+      }
+
+      YamlNode node = options[AnalyzerOptions.include];
+      if (node == null) {
+        return;
+      }
+      SourceSpan span = node.span;
+      initialIncludeSpan ??= span;
+      String includeUri = span.text;
+      Source includedSource =
+          context.sourceFactory.resolveUri(source, includeUri);
+      if (!includedSource.exists()) {
+        errors.add(new AnalysisError(
+            initialSource,
+            initialIncludeSpan.start.column + 1,
+            initialIncludeSpan.length,
+            AnalysisOptionsWarningCode.INCLUDE_FILE_NOT_FOUND,
+            [includeUri, source.fullName]));
+        return;
+      }
+      try {
+        Map<String, YamlNode> options =
+            optionsProvider.getOptionsFromString(includedSource.contents.data);
+        validate(includedSource, options);
+      } on OptionsFormatException catch (e) {
+        var args = [
+          includedSource.fullName,
+          e.span.start.offset.toString(),
+          e.span.end.offset.toString(),
+          e.message,
+        ];
+        // Report errors for included option files
+        // on the include directive located in the initial options file.
+        errors.add(new AnalysisError(
+            initialSource,
+            initialIncludeSpan.start.column + 1,
+            initialIncludeSpan.length,
+            AnalysisOptionsErrorCode.INCLUDED_FILE_PARSE_ERROR,
+            args));
+      }
+    }
 
     try {
       Map<String, YamlNode> options =
           optionsProvider.getOptionsFromString(content);
-      errors.addAll(_validate(options));
+      validate(source, options);
     } on OptionsFormatException catch (e) {
       SourceSpan span = e.span;
-      var error = new AnalysisError(source, span.start.column + 1, span.length,
-          AnalysisOptionsErrorCode.PARSE_ERROR, [e.message]);
-      errors.add(error);
+      errors.add(new AnalysisError(source, span.start.column + 1, span.length,
+          AnalysisOptionsErrorCode.PARSE_ERROR, [e.message]));
     }
 
     //
@@ -261,9 +317,6 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
     outputs[ANALYSIS_OPTIONS_ERRORS] = errors;
     outputs[LINE_INFO] = computeLineInfo(content);
   }
-
-  List<AnalysisError> _validate(Map<String, YamlNode> options) =>
-      new OptionsFileValidator(source).validate(options);
 
   /// Return a map from the names of the inputs of this kind of task to the
   /// task input descriptors describing those inputs for a task with the
@@ -338,16 +391,16 @@ class LinterOptionsValidator extends TopLevelOptionValidator {
 
 /// Validates options defined in an analysis options file.
 class OptionsFileValidator {
-  // TODO(pq): move to an extension point.
+  /// The source being validated.
+  final Source source;
+
   final List<OptionsValidator> _validators = [
     new AnalyzerOptionsValidator(),
-    new LinterOptionsValidator()
+    new LinterOptionsValidator(),
+    new LinterRuleOptionsValidator()
   ];
 
-  final Source source;
-  OptionsFileValidator(this.source) {
-    _validators.addAll(AnalysisEngine.instance.optionsPlugin.optionsValidators);
-  }
+  OptionsFileValidator(this.source);
 
   List<AnalysisError> validate(Map<String, YamlNode> options) {
     RecordingErrorListener recorder = new RecordingErrorListener();
@@ -446,116 +499,34 @@ class _OptionsProcessor {
       var strongMode = analyzer[AnalyzerOptions.strong_mode];
       _applyStrongOptions(options, strongMode);
 
+      // Set filters.
+      var filters = analyzer[AnalyzerOptions.errors];
+      _applyProcessors(options, filters);
+
       // Process language options.
       var language = analyzer[AnalyzerOptions.language];
       _applyLanguageOptions(options, language);
-    }
-  }
-
-  /// Configure [context] based on the given [options] (which can be `null`
-  /// to restore [defaults]).
-  void configure(AnalysisContext context, Map<String, Object> options) {
-    if (options == null) {
-      options = defaults;
-    }
-
-    var analyzer = options[AnalyzerOptions.analyzer];
-    if (analyzer is Map) {
-      // Set strong mode (default is false).
-      var strongMode = analyzer[AnalyzerOptions.strong_mode];
-      setStrongMode(context, strongMode);
-
-      // Set filters.
-      var filters = analyzer[AnalyzerOptions.errors];
-      setProcessors(context, filters);
-
-      // Process language options.
-      var language = analyzer[AnalyzerOptions.language];
-      setLanguageOptions(context, language);
 
       // Process excludes.
       var excludes = analyzer[AnalyzerOptions.exclude];
-      setExcludes(context, excludes);
+      _applyExcludes(options, excludes);
+    }
+
+    LintConfig config = parseConfig(optionMap);
+    if (config != null) {
+      Iterable<LintRule> lintRules = Registry.ruleRegistry.enabled(config);
+      if (lintRules.isNotEmpty) {
+        options.lint = true;
+        options.lintRules = lintRules.toList();
+      }
     }
   }
 
-  void setExcludes(AnalysisContext context, Object excludes) {
+  void _applyExcludes(AnalysisOptionsImpl options, Object excludes) {
     if (excludes is YamlList) {
       List<String> excludeList = toStringList(excludes);
       if (excludeList != null) {
-        context.setConfigurationData(CONTEXT_EXCLUDES, excludeList);
-      }
-    }
-  }
-
-  void setLanguageOption(
-      AnalysisContext context, Object feature, Object value) {
-    if (feature == AnalyzerOptions.enableAssertInitializer) {
-      if (isTrue(value)) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableAssertInitializer = true;
-        context.analysisOptions = options;
-      }
-    }
-    if (feature == AnalyzerOptions.enableStrictCallChecks) {
-      if (isTrue(value)) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableStrictCallChecks = true;
-        context.analysisOptions = options;
-      }
-    }
-    if (feature == AnalyzerOptions.enableSuperMixins) {
-      if (isTrue(value)) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableSuperMixins = true;
-        context.analysisOptions = options;
-      }
-    }
-    if (feature == AnalyzerOptions.enableGenericMethods) {
-      if (isTrue(value)) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableGenericMethods = true;
-        context.analysisOptions = options;
-      }
-    }
-  }
-
-  void setLanguageOptions(AnalysisContext context, Object configs) {
-    if (configs is YamlMap) {
-      configs.nodes.forEach((k, v) {
-        if (k is YamlScalar && v is YamlScalar) {
-          String feature = k.value?.toString();
-          setLanguageOption(context, feature, v.value);
-        }
-      });
-    } else if (configs is Map) {
-      configs.forEach((k, v) => setLanguageOption(context, k, v));
-    }
-  }
-
-  void setProcessors(AnalysisContext context, Object codes) {
-    ErrorConfig config = new ErrorConfig(codes);
-    context.setConfigurationData(
-        CONFIGURED_ERROR_PROCESSORS, config.processors);
-  }
-
-  void setStrongMode(AnalysisContext context, Object strongMode) {
-    if (strongMode is Map) {
-      AnalysisOptionsImpl options =
-          new AnalysisOptionsImpl.from(context.analysisOptions);
-      _applyStrongOptions(options, strongMode);
-      context.analysisOptions = options;
-    } else {
-      strongMode = strongMode is bool ? strongMode : false;
-      if (context.analysisOptions.strongMode != strongMode) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.strongMode = strongMode;
-        context.analysisOptions = options;
+        options.excludePatterns = excludeList;
       }
     }
   }
@@ -566,12 +537,10 @@ class _OptionsProcessor {
     if (boolValue != null) {
       if (feature == AnalyzerOptions.enableAssertInitializer) {
         options.enableAssertInitializer = boolValue;
-      } else if (feature == AnalyzerOptions.enableInitializingFormalAccess) {
-        options.enableInitializingFormalAccess = boolValue;
+      } else if (feature == AnalyzerOptions.enableStrictCallChecks) {
+        options.enableStrictCallChecks = true;
       } else if (feature == AnalyzerOptions.enableSuperMixins) {
         options.enableSuperMixins = boolValue;
-      } else if (feature == AnalyzerOptions.enableGenericMethods) {
-        options.enableGenericMethods = boolValue;
       }
     }
   }
@@ -588,6 +557,11 @@ class _OptionsProcessor {
       configs
           .forEach((key, value) => _applyLanguageOption(options, key, value));
     }
+  }
+
+  void _applyProcessors(AnalysisOptionsImpl options, Object codes) {
+    ErrorConfig config = new ErrorConfig(codes);
+    options.errorProcessors = config.processors;
   }
 
   void _applyStrongModeOption(

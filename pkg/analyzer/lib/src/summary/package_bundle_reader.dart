@@ -6,12 +6,10 @@ import 'package:analyzer/src/context/cache.dart';
 import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
-import 'package:analyzer/src/source/source_resource.dart';
 import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/resynthesize.dart';
@@ -57,12 +55,7 @@ class InSummaryPackageUriResolver extends UriResolver {
     UnlinkedUnit unit = _dataStore.unlinkedMap[uriString];
     if (unit != null) {
       String summaryPath = _dataStore.uriToSummaryPath[uriString];
-      if (unit.fallbackModePath.isNotEmpty) {
-        return new _InSummaryFallbackSource(
-            new JavaFile(unit.fallbackModePath), actualUri, summaryPath);
-      } else {
-        return new InSummarySource(actualUri, summaryPath);
-      }
+      return new InSummarySource(actualUri, summaryPath);
     }
     return null;
   }
@@ -134,14 +127,7 @@ class InSummaryUriResolver extends UriResolver {
     UnlinkedUnit unit = _dataStore.unlinkedMap[uriString];
     if (unit != null) {
       String summaryPath = _dataStore.uriToSummaryPath[uriString];
-      if (unit.fallbackModePath.isNotEmpty) {
-        return new _InSummaryFallbackFileSource(
-            resourceProvider.getFile(unit.fallbackModePath),
-            actualUri,
-            summaryPath);
-      } else {
-        return new InSummarySource(actualUri, summaryPath);
-      }
+      return new InSummarySource(actualUri, summaryPath);
     }
     return null;
   }
@@ -174,6 +160,23 @@ abstract class ResynthesizerResultProvider extends ResultProvider {
       return true;
     }
     AnalysisTarget target = entry.target;
+
+    // LINE_INFO can be provided using just the UnlinkedUnit.
+    if (target is Source && result == LINE_INFO) {
+      String uriString = target.uri.toString();
+      UnlinkedUnit unlinkedUnit = _dataStore.unlinkedMap[uriString];
+      if (unlinkedUnit != null) {
+        List<int> lineStarts = unlinkedUnit.lineStarts;
+        if (lineStarts.isNotEmpty) {
+          LineInfo lineInfo = new LineInfo(lineStarts);
+          entry.setValue(result as ResultDescriptor<LineInfo>, lineInfo,
+              TargetedResult.EMPTY_LIST);
+          return true;
+        }
+      }
+      return false;
+    }
+
     // Check whether there are results for the source.
     if (!hasResultsForSource(target.librarySource ?? target.source)) {
       return false;
@@ -236,16 +239,6 @@ abstract class ResynthesizerResultProvider extends ResultProvider {
               .toList(growable: false);
           entry.setValue(result as ResultDescriptor<List<Source>>,
               librarySources, TargetedResult.EMPTY_LIST);
-          return true;
-        }
-        return false;
-      } else if (result == LINE_INFO) {
-        UnlinkedUnit unlinkedUnit = _dataStore.unlinkedMap[uriString];
-        List<int> lineStarts = unlinkedUnit.lineStarts;
-        if (lineStarts.isNotEmpty) {
-          LineInfo lineInfo = new LineInfo(lineStarts);
-          entry.setValue(result as ResultDescriptor<LineInfo>, lineInfo,
-              TargetedResult.EMPTY_LIST);
           return true;
         }
         return false;
@@ -396,12 +389,26 @@ class SummaryDataStore {
     for (int i = 0; i < bundle.unlinkedUnitUris.length; i++) {
       String uri = bundle.unlinkedUnitUris[i];
       uriToSummaryPath[uri] = path;
-      unlinkedMap[uri] = bundle.unlinkedUnits[i];
+      addUnlinkedUnit(uri, bundle.unlinkedUnits[i]);
     }
     for (int i = 0; i < bundle.linkedLibraryUris.length; i++) {
       String uri = bundle.linkedLibraryUris[i];
-      linkedMap[uri] = bundle.linkedLibraries[i];
+      addLinkedLibrary(uri, bundle.linkedLibraries[i]);
     }
+  }
+
+  /**
+   * Add the given [linkedLibrary] with the given [uri].
+   */
+  void addLinkedLibrary(String uri, LinkedLibrary linkedLibrary) {
+    linkedMap[uri] = linkedLibrary;
+  }
+
+  /**
+   * Add the given [unlinkedUnit] with the given [uri].
+   */
+  void addUnlinkedUnit(String uri, UnlinkedUnit unlinkedUnit) {
+    unlinkedMap[uri] = unlinkedUnit;
   }
 
   /**
@@ -465,35 +472,6 @@ class _FileBasedSummaryResynthesizer extends SummaryResynthesizer {
   @override
   bool hasLibrarySummary(String uri) {
     LinkedLibrary linkedLibrary = _dataStore.linkedMap[uri];
-    return linkedLibrary != null && !linkedLibrary.fallbackMode;
+    return linkedLibrary != null;
   }
-}
-
-/**
- * A source that is part of a package whose summary was generated in fallback
- * mode. This source behaves identically to a [FileSource] except that it also
- * provides [summaryPath].
- */
-class _InSummaryFallbackFileSource extends FileSource
-    implements InSummarySource {
-  @override
-  final String summaryPath;
-
-  _InSummaryFallbackFileSource(File file, Uri uri, this.summaryPath)
-      : super(file, uri);
-}
-
-/**
- * A source that is part of a package whose summary was generated in fallback
- * mode. This source behaves identically to a [FileBasedSource] except that it
- * also provides [summaryPath].
- */
-@deprecated
-class _InSummaryFallbackSource extends FileBasedSource
-    implements InSummarySource {
-  @override
-  final String summaryPath;
-
-  _InSummaryFallbackSource(JavaFile file, Uri uri, this.summaryPath)
-      : super(file, uri);
 }

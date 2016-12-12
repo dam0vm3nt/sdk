@@ -7,6 +7,7 @@ library analyzer.src.generated.static_type_analyzer;
 import 'dart:collection';
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
@@ -1630,7 +1631,7 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
     type = type.substitute2(freshTypeVars, typeVars);
 
     var function = new FunctionElementImpl("", -1);
-    function.synthetic = true;
+    function.isSynthetic = true;
     function.returnType = type.returnType;
     function.typeParameters = freshVarElements;
     function.shareParameters(type.parameters);
@@ -2002,7 +2003,7 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
 
             // Adjust the expected parameter type to have this return type.
             var function = new FunctionElementImpl(firstParamType.name, -1)
-              ..synthetic = true
+              ..isSynthetic = true
               ..shareParameters(firstParamType.parameters)
               ..returnType = paramReturnType;
             function.type = new FunctionTypeImpl(function);
@@ -2120,8 +2121,8 @@ class StaticTypeAnalyzer extends SimpleAstVisitor<Object> {
       VariableDeclaration node, Expression initializer) {
     if (initializer != null &&
         (node.parent as VariableDeclarationList).type == null &&
-        (initializer.staticType != null) &&
-        (!initializer.staticType.isBottom)) {
+        (resolutionMap.staticTypeForExpression(initializer) != null) &&
+        (!resolutionMap.staticTypeForExpression(initializer).isBottom)) {
       VariableElement element = node.element;
       if (element is LocalVariableElementImpl) {
         element.type = initializer.staticType;

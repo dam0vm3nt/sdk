@@ -50,10 +50,11 @@ class MemoryResourceProvider implements ResourceProvider {
    * this class are never converted automatically.
    */
   String convertPath(String path) {
-    if (pathContext.style == pathos.windows.style &&
-        path.startsWith(pathos.posix.separator)) {
-      path = r'C:' +
-          path.replaceAll(pathos.posix.separator, pathos.windows.separator);
+    if (pathContext.style == pathos.windows.style) {
+      if (path.startsWith(pathos.posix.separator)) {
+        path = r'C:' + path;
+      }
+      path = path.replaceAll(pathos.posix.separator, pathos.windows.separator);
     }
     return path;
   }
@@ -306,6 +307,11 @@ class _MemoryDummyLink extends _MemoryResource implements File {
   bool get exists => false;
 
   @override
+  int get lengthSync {
+    throw new FileSystemException(path, 'File could not be read');
+  }
+
+  @override
   int get modificationStamp {
     int stamp = _provider._pathToTimestamp[path];
     if (stamp == null) {
@@ -369,6 +375,11 @@ class _MemoryFile extends _MemoryResource implements File {
 
   @override
   bool get exists => _provider._pathToResource[path] is _MemoryFile;
+
+  @override
+  int get lengthSync {
+    return readAsBytesSync().length;
+  }
 
   @override
   int get modificationStamp {

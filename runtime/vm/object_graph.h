@@ -6,11 +6,14 @@
 #define RUNTIME_VM_OBJECT_GRAPH_H_
 
 #include "vm/allocation.h"
-#include "vm/object.h"
 
 namespace dart {
 
+class Array;
 class Isolate;
+class Object;
+class RawObject;
+class WriteStream;
 
 // Utility to traverse the object graph in an ordered fashion.
 // Example uses:
@@ -29,9 +32,10 @@ class ObjectGraph : public StackResource {
     bool MoveToParent();
     // Offset into parent for the pointer to current object. -1 if no parent.
     intptr_t OffsetFromParentInWords() const;
+
    private:
     StackIterator(const Stack* stack, intptr_t index)
-        : stack_(stack), index_(index) { }
+        : stack_(stack), index_(index) {}
     const Stack* stack_;
     intptr_t index_;
     friend class ObjectGraph::Stack;
@@ -46,7 +50,7 @@ class ObjectGraph : public StackResource {
       kBacktrack,  // Ignore this object's pointers.
       kAbort,      // Terminate the entire search immediately.
     };
-    virtual ~Visitor() { }
+    virtual ~Visitor() {}
     // Visits the object pointed to by *it. The iterator is only valid
     // during this call. This method must not allocate from the heap or
     // trigger GC in any way.
@@ -92,12 +96,16 @@ class ObjectGraph : public StackResource {
   // be live due to references from the stack or embedder handles.
   intptr_t InboundReferences(Object* obj, const Array& references);
 
+  enum SnapshotRoots { kVM, kUser };
+
   // Write the isolate's object graph to 'stream'. Smis and nulls are omitted.
   // Returns the number of nodes in the stream, including the root.
   // If collect_garabage is false, the graph will include weakly-reachable
   // objects.
   // TODO(koda): Document format; support streaming/chunking.
-  intptr_t Serialize(WriteStream* stream, bool collect_garbage);
+  intptr_t Serialize(WriteStream* stream,
+                     SnapshotRoots roots,
+                     bool collect_garbage);
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(ObjectGraph);

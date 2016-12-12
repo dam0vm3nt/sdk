@@ -90,46 +90,42 @@ class _ServiceTesteeLauncher {
   Future<Process> _spawnProcess(bool pause_on_start,
                                 bool pause_on_exit,
                                 bool pause_on_unhandled_exceptions,
-                                bool trace_service,
-                                bool trace_compiler) {
+                                bool testeeControlsServer,
+                                bool useAuthToken,
+                                List<String> extraArgs) {
     assert(pause_on_start != null);
     assert(pause_on_exit != null);
     assert(pause_on_unhandled_exceptions != null);
-    assert(trace_service != null);
-    assert(trace_compiler != null);
+    assert(testeeControlsServer != null);
+    assert(useAuthToken != null);
 
     if (_shouldLaunchSkyShell()) {
       return _spawnSkyProcess(pause_on_start,
                               pause_on_exit,
                               pause_on_unhandled_exceptions,
-                              trace_service,
-                              trace_compiler);
+                              testeeControlsServer,
+                              extraArgs);
     } else {
       return _spawnDartProcess(pause_on_start,
                                pause_on_exit,
                                pause_on_unhandled_exceptions,
-                               trace_service,
-                               trace_compiler);
+                               testeeControlsServer,
+                               useAuthToken,
+                               extraArgs);
     }
   }
 
   Future<Process> _spawnDartProcess(bool pause_on_start,
                                     bool pause_on_exit,
                                     bool pause_on_unhandled_exceptions,
-                                    bool trace_service,
-                                    bool trace_compiler) {
+                                    bool testeeControlsServer,
+                                    bool useAuthToken,
+                                    List<String> extraArgs) {
     assert(!_shouldLaunchSkyShell());
 
     String dartExecutable = Platform.executable;
 
     var fullArgs = [];
-    if (trace_service) {
-      fullArgs.add('--trace-service');
-      fullArgs.add('--trace-service-verbose');
-    }
-    if (trace_compiler) {
-      fullArgs.add('--trace-compiler');
-    }
     if (pause_on_start) {
       fullArgs.add('--pause-isolates-on-start');
     }
@@ -139,32 +135,35 @@ class _ServiceTesteeLauncher {
     if (pause_on_unhandled_exceptions) {
       fullArgs.add('--pause-isolates-on-unhandled-exceptions');
     }
+    if (extraArgs != null) {
+      fullArgs.addAll(extraArgs);
+    }
 
     fullArgs.addAll(Platform.executableArguments);
-    fullArgs.add('--enable-vm-service:0');
+    if (!testeeControlsServer) {
+      fullArgs.add('--enable-vm-service:0');
+    }
     fullArgs.addAll(args);
 
-    return _spawnCommon(dartExecutable, fullArgs);
+    return _spawnCommon(
+        dartExecutable,
+        fullArgs,
+        <String, String>{
+          'DART_SERVICE_USE_AUTH': '$useAuthToken'
+        });
   }
 
   Future<Process> _spawnSkyProcess(bool pause_on_start,
                                    bool pause_on_exit,
                                    bool pause_on_unhandled_exceptions,
-                                   bool trace_service,
-                                   bool trace_compiler) {
+                                   bool testeeControlsServer,
+                                   List<String> extraArgs) {
     assert(_shouldLaunchSkyShell());
 
     String dartExecutable = _skyShellPath();
 
     var dartFlags = [];
     var fullArgs = [];
-    if (trace_service) {
-      dartFlags.add('--trace_service');
-      dartFlags.add('--trace_service_verbose');
-    }
-    if (trace_compiler) {
-      dartFlags.add('--trace_compiler');
-    }
     if (pause_on_start) {
       dartFlags.add('--pause_isolates_on_start');
       fullArgs.add('--start-paused');
@@ -177,54 +176,67 @@ class _ServiceTesteeLauncher {
     }
     // Override mirrors.
     dartFlags.add('--enable_mirrors=true');
+    if (extraArgs != null) {
+      fullArgs.addAll(extraArgs);
+    }
 
     fullArgs.addAll(Platform.executableArguments);
-    fullArgs.add('--observatory-port=0');
+    if (!testeeControlsServer) {
+      fullArgs.add('--observatory-port=0');
+    }
     fullArgs.add('--dart-flags=${dartFlags.join(' ')}');
     fullArgs.addAll(args);
 
-    return _spawnCommon(dartExecutable, fullArgs);
+    return _spawnCommon(dartExecutable, fullArgs, <String, String>{});
   }
 
-  Future<Process> _spawnCommon(String executable, List<String> arguments) {
+  Future<Process> _spawnCommon(String executable,
+                               List<String> arguments,
+                               Map<String, String> dartEnvironment) {
     var environment = _TESTEE_SPAWN_ENV;
     var bashEnvironment = new StringBuffer();
     environment.forEach((k, v) => bashEnvironment.write("$k=$v "));
+    if (dartEnvironment != null) {
+      dartEnvironment.forEach((k, v) {
+        arguments.insert(0, '-D$k=$v');
+      });
+    }
     print('** Launching $bashEnvironment$executable ${arguments.join(' ')}');
     return Process.start(executable, arguments, environment: environment);
   }
 
-  Future<int> launch(bool pause_on_start,
+  Future<Uri> launch(bool pause_on_start,
                      bool pause_on_exit,
                      bool pause_on_unhandled_exceptions,
-                     bool trace_service,
-                     bool trace_compiler) {
+                     bool testeeControlsServer,
+                     bool useAuthToken,
+                     List<String> extraArgs) {
     return _spawnProcess(pause_on_start,
                   pause_on_exit,
                   pause_on_unhandled_exceptions,
-                  trace_service,
-                  trace_compiler).then((p) {
-      Completer completer = new Completer();
+                  testeeControlsServer,
+                  useAuthToken,
+                  extraArgs).then((p) {
+      Completer<Uri> completer = new Completer<Uri>();
       process = p;
-      var portNumber;
+      Uri uri;
       var blank;
       var first = true;
       process.stdout.transform(UTF8.decoder)
                     .transform(new LineSplitter()).listen((line) {
-        if (line.startsWith('Observatory listening on http://')) {
-          RegExp portExp = new RegExp(r"\d+.\d+.\d+.\d+:(\d+)");
-          var port = portExp.firstMatch(line).group(1);
-          portNumber = int.parse(port);
+        const kObservatoryListening = 'Observatory listening on ';
+        if (line.startsWith(kObservatoryListening)) {
+          uri = Uri.parse(line.substring(kObservatoryListening.length));
         }
         if (pause_on_start || line == '') {
           // Received blank line.
           blank = true;
         }
-        if (portNumber != null && blank == true && first == true) {
-          completer.complete(portNumber);
+        if ((uri != null) && (blank == true) && (first == true)) {
+          completer.complete(uri);
           // Stop repeat completions.
           first = false;
-          print('** Signaled to run test queries on $portNumber');
+          print('** Signaled to run test queries on $uri');
         }
         print('>testee>out> $line');
       });
@@ -250,86 +262,36 @@ class _ServiceTesteeLauncher {
   }
 }
 
-// A tester runner that doesn't spawn a process but instead connects to
-// an already running flutter application running on a device. Assumes
-// port 8100. This is only useful for debugging.
-class _FlutterDeviceServiceTesterRunner {
-  void run({List<String> mainArgs,
-            List<VMTest> vmTests,
-            List<IsolateTest> isolateTests,
-            bool pause_on_start: false,
-            bool pause_on_exit: false,
-            bool trace_service: false,
-            bool trace_compiler: false,
-            bool verbose_vm: false,
-            bool pause_on_unhandled_exceptions: false}) {
-    var port = 8100;
-    serviceWebsocketAddress = 'ws://localhost:$port/ws';
-    serviceHttpAddress = 'http://localhost:$port';
-    var name = Platform.script.pathSegments.last;
-    Chain.capture(() async {
-      var vm =
-          new WebSocketVM(new WebSocketVMTarget(serviceWebsocketAddress));
-      print('Loading VM...');
-      await vm.load();
-      print('Done loading VM');
-
-      // Run vm tests.
-      if (vmTests != null) {
-        var testIndex = 1;
-        var totalTests = vmTests.length;
-        for (var test in vmTests) {
-          vm.verbose = verbose_vm;
-          print('Running $name [$testIndex/$totalTests]');
-          testIndex++;
-          await test(vm);
-        }
-      }
-
-      // Run isolate tests.
-      if (isolateTests != null) {
-        var isolate = await vm.isolates.first.load();
-        var testIndex = 1;
-        var totalTests = isolateTests.length;
-        for (var test in isolateTests) {
-          vm.verbose = verbose_vm;
-          print('Running $name [$testIndex/$totalTests]');
-          testIndex++;
-          await test(isolate);
-        }
-      }
-    }, onError: (error, stackTrace) {
-      print('Unexpected exception in service tests: $error\n$stackTrace');
-    });
-  }
-}
-
-void suppressWarning() {
-  new _FlutterDeviceServiceTesterRunner();
+void setupAddresses(Uri serverAddress) {
+  serviceWebsocketAddress =
+      'ws://${serverAddress.authority}${serverAddress.path}ws';
+  serviceHttpAddress =
+      'http://${serverAddress.authority}${serverAddress.path}';
 }
 
 class _ServiceTesterRunner {
   void run({List<String> mainArgs,
+            List<String> extraArgs,
             List<VMTest> vmTests,
             List<IsolateTest> isolateTests,
             bool pause_on_start: false,
             bool pause_on_exit: false,
-            bool trace_service: false,
-            bool trace_compiler: false,
             bool verbose_vm: false,
-            bool pause_on_unhandled_exceptions: false}) {
+            bool pause_on_unhandled_exceptions: false,
+            bool testeeControlsServer: false,
+            bool useAuthToken: false}) {
     var process = new _ServiceTesteeLauncher();
     process.launch(pause_on_start, pause_on_exit,
                    pause_on_unhandled_exceptions,
-                   trace_service, trace_compiler).then((port) async {
+                   testeeControlsServer,
+                   useAuthToken, extraArgs).then((Uri serverAddress) async {
       if (mainArgs.contains("--gdb")) {
         var pid = process.process.pid;
         var wait = new Duration(seconds: 10);
         print("Testee has pid $pid, waiting $wait before continuing");
         sleep(wait);
       }
-      serviceWebsocketAddress = 'ws://localhost:$port/ws';
-      serviceHttpAddress = 'http://localhost:$port';
+      setupAddresses(serverAddress);
       var name = Platform.script.pathSegments.last;
       Chain.capture(() async {
         var vm =
@@ -383,10 +345,11 @@ Future runIsolateTests(List<String> mainArgs,
                         testeeConcurrent(),
                         bool pause_on_start: false,
                         bool pause_on_exit: false,
-                        bool trace_service: false,
-                        bool trace_compiler: false,
                         bool verbose_vm: false,
-                        bool pause_on_unhandled_exceptions: false}) async {
+                        bool pause_on_unhandled_exceptions: false,
+                        bool testeeControlsServer: false,
+                        bool useAuthToken: false,
+                        List<String> extraArgs}) async {
   assert(!pause_on_start || testeeBefore == null);
   if (_isTestee()) {
     new _ServiceTesteeRunner().run(testeeBefore: testeeBefore,
@@ -396,13 +359,14 @@ Future runIsolateTests(List<String> mainArgs,
   } else {
     new _ServiceTesterRunner().run(
         mainArgs: mainArgs,
+        extraArgs: extraArgs,
         isolateTests: tests,
         pause_on_start: pause_on_start,
         pause_on_exit: pause_on_exit,
-        trace_service: trace_service,
-        trace_compiler: trace_compiler,
         verbose_vm: verbose_vm,
-        pause_on_unhandled_exceptions: pause_on_unhandled_exceptions);
+        pause_on_unhandled_exceptions: pause_on_unhandled_exceptions,
+        testeeControlsServer: testeeControlsServer,
+        useAuthToken: useAuthToken);
   }
 }
 
@@ -421,10 +385,9 @@ void runIsolateTestsSynchronous(List<String> mainArgs,
                                  void testeeConcurrent(),
                                  bool pause_on_start: false,
                                  bool pause_on_exit: false,
-                                 bool trace_service: false,
-                                 bool trace_compiler: false,
                                  bool verbose_vm: false,
-                                 bool pause_on_unhandled_exceptions: false}) {
+                                 bool pause_on_unhandled_exceptions: false,
+                                 List<String> extraArgs}) {
   assert(!pause_on_start || testeeBefore == null);
   if (_isTestee()) {
     new _ServiceTesteeRunner().runSync(testeeBeforeSync: testeeBefore,
@@ -434,11 +397,10 @@ void runIsolateTestsSynchronous(List<String> mainArgs,
   } else {
     new _ServiceTesterRunner().run(
         mainArgs: mainArgs,
+        extraArgs: extraArgs,
         isolateTests: tests,
         pause_on_start: pause_on_start,
         pause_on_exit: pause_on_exit,
-        trace_service: trace_service,
-        trace_compiler: trace_compiler,
         verbose_vm: verbose_vm,
         pause_on_unhandled_exceptions: pause_on_unhandled_exceptions);
   }
@@ -455,10 +417,9 @@ Future runVMTests(List<String> mainArgs,
                    testeeConcurrent(),
                    bool pause_on_start: false,
                    bool pause_on_exit: false,
-                   bool trace_service: false,
-                   bool trace_compiler: false,
                    bool verbose_vm: false,
-                   bool pause_on_unhandled_exceptions: false}) async {
+                   bool pause_on_unhandled_exceptions: false,
+                   List<String> extraArgs}) async {
   if (_isTestee()) {
     new _ServiceTesteeRunner().run(testeeBefore: testeeBefore,
                                    testeeConcurrent: testeeConcurrent,
@@ -467,11 +428,10 @@ Future runVMTests(List<String> mainArgs,
   } else {
     new _ServiceTesterRunner().run(
         mainArgs: mainArgs,
+        extraArgs: extraArgs,
         vmTests: tests,
         pause_on_start: pause_on_start,
         pause_on_exit: pause_on_exit,
-        trace_service: trace_service,
-        trace_compiler: trace_compiler,
         verbose_vm: verbose_vm,
         pause_on_unhandled_exceptions: pause_on_unhandled_exceptions);
   }

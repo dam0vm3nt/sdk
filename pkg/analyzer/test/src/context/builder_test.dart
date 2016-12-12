@@ -6,18 +6,15 @@ library analyzer.test.src.context.context_builder_test;
 
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
-import 'package:analyzer/plugin/options.dart';
 import 'package:analyzer/src/context/builder.dart';
 import 'package:analyzer/src/context/source.dart';
 import 'package:analyzer/src/generated/bazel.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
-import 'package:analyzer/src/plugin/options_plugin.dart';
 import 'package:package_config/packages.dart';
 import 'package:package_config/src/packages_impl.dart';
 import 'package:path/path.dart' as path;
-import 'package:plugin/src/plugin_impl.dart';
 import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
 
@@ -144,8 +141,8 @@ const Map<String, LibraryInfo> libraries = const {
     // being returned.
     AnalysisOptionsImpl defaultOptions = new AnalysisOptionsImpl();
     defaultOptions.dart2jsHint = !defaultOptions.dart2jsHint;
-    defaultOptions.enableAssertMessage = !defaultOptions.enableAssertMessage;
-    defaultOptions.enableGenericMethods = !defaultOptions.enableGenericMethods;
+    defaultOptions.enableLazyAssignmentOperators =
+        !defaultOptions.enableLazyAssignmentOperators;
     defaultOptions.enableStrictCallChecks =
         !defaultOptions.enableStrictCallChecks;
     defaultOptions.enableSuperMixins = !defaultOptions.enableSuperMixins;
@@ -497,10 +494,10 @@ b:${pathContext.toUri(packageB)}
 
   void test_getAnalysisOptions_default_noOverrides() {
     AnalysisOptionsImpl defaultOptions = new AnalysisOptionsImpl();
-    defaultOptions.enableGenericMethods = true;
+    defaultOptions.enableLazyAssignmentOperators = true;
     builderOptions.defaultOptions = defaultOptions;
     AnalysisOptionsImpl expected = new AnalysisOptionsImpl();
-    expected.enableGenericMethods = true;
+    expected.enableLazyAssignmentOperators = true;
     String path = resourceProvider.convertPath('/some/directory/path');
     String filePath =
         pathContext.join(path, AnalysisEngine.ANALYSIS_OPTIONS_YAML_FILE);
@@ -512,18 +509,17 @@ linter:
     - empty_constructor_bodies
 ''');
 
-    AnalysisContext context = AnalysisEngine.instance.createAnalysisContext();
-    AnalysisOptions options = builder.getAnalysisOptions(context, path);
+    AnalysisOptions options = builder.getAnalysisOptions(path);
     _expectEqualOptions(options, expected);
   }
 
   void test_getAnalysisOptions_default_overrides() {
     AnalysisOptionsImpl defaultOptions = new AnalysisOptionsImpl();
-    defaultOptions.enableGenericMethods = true;
+    defaultOptions.enableLazyAssignmentOperators = true;
     builderOptions.defaultOptions = defaultOptions;
     AnalysisOptionsImpl expected = new AnalysisOptionsImpl();
     expected.enableSuperMixins = true;
-    expected.enableGenericMethods = true;
+    expected.enableLazyAssignmentOperators = true;
     String path = resourceProvider.convertPath('/some/directory/path');
     String filePath =
         pathContext.join(path, AnalysisEngine.ANALYSIS_OPTIONS_YAML_FILE);
@@ -535,24 +531,45 @@ analyzer:
     enableSuperMixins : true
 ''');
 
-    AnalysisEngine engine = AnalysisEngine.instance;
-    OptionsPlugin plugin = engine.optionsPlugin;
-    plugin.registerExtensionPoints((_) {});
-    try {
-      _TestOptionsProcessor processor = new _TestOptionsProcessor();
-      processor.expectedOptions = <String, Object>{
-        'analyzer': {
-          'language': {'enableSuperMixins': true}
-        }
-      };
-      (plugin.optionsProcessorExtensionPoint as ExtensionPointImpl)
-          .add(processor);
-      AnalysisContext context = engine.createAnalysisContext();
-      AnalysisOptions options = builder.getAnalysisOptions(context, path);
-      _expectEqualOptions(options, expected);
-    } finally {
-      plugin.registerExtensionPoints((_) {});
-    }
+    AnalysisOptions options = builder.getAnalysisOptions(path);
+    _expectEqualOptions(options, expected);
+  }
+
+  void test_getAnalysisOptions_includes() {
+    AnalysisOptionsImpl defaultOptions = new AnalysisOptionsImpl();
+    builderOptions.defaultOptions = defaultOptions;
+    AnalysisOptionsImpl expected = new AnalysisOptionsImpl();
+    expected.enableSuperMixins = true;
+    resourceProvider.newFile(
+        resourceProvider.convertPath('/mypkgs/somepkg/lib/here.yaml'),
+        '''
+two: {boo: newt}
+''');
+    String path = resourceProvider.convertPath('/some/directory/path');
+    resourceProvider.newFile(
+        pathContext.join(path, '.packages'),
+        '''
+somepkg:../../../mypkgs/somepkg/lib
+''');
+    resourceProvider.newFile(
+        pathContext.join(path, 'bar.yaml'),
+        '''
+include: package:somepkg/here.yaml
+foo: {bar: baz}
+''');
+    String filePath =
+        pathContext.join(path, AnalysisEngine.ANALYSIS_OPTIONS_YAML_FILE);
+    resourceProvider.newFile(
+        filePath,
+        '''
+include: bar.yaml
+analyzer:
+  language:
+    enableSuperMixins : true
+''');
+
+    AnalysisOptions options = builder.getAnalysisOptions(path);
+    _expectEqualOptions(options, expected);
   }
 
   void test_getAnalysisOptions_invalid() {
@@ -561,20 +578,8 @@ analyzer:
         pathContext.join(path, AnalysisEngine.ANALYSIS_OPTIONS_YAML_FILE);
     resourceProvider.newFile(filePath, ';');
 
-    AnalysisEngine engine = AnalysisEngine.instance;
-    OptionsPlugin plugin = engine.optionsPlugin;
-    plugin.registerExtensionPoints((_) {});
-    try {
-      _TestOptionsProcessor processor = new _TestOptionsProcessor();
-      (plugin.optionsProcessorExtensionPoint as ExtensionPointImpl)
-          .add(processor);
-      AnalysisContext context = engine.createAnalysisContext();
-      AnalysisOptions options = builder.getAnalysisOptions(context, path);
-      expect(options, isNotNull);
-      expect(processor.errorCount, 1);
-    } finally {
-      plugin.registerExtensionPoints((_) {});
-    }
+    AnalysisOptions options = builder.getAnalysisOptions(path);
+    expect(options, isNotNull);
   }
 
   void test_getAnalysisOptions_noDefault_noOverrides() {
@@ -589,8 +594,7 @@ linter:
     - empty_constructor_bodies
 ''');
 
-    AnalysisContext context = AnalysisEngine.instance.createAnalysisContext();
-    AnalysisOptions options = builder.getAnalysisOptions(context, path);
+    AnalysisOptions options = builder.getAnalysisOptions(path);
     _expectEqualOptions(options, new AnalysisOptionsImpl());
   }
 
@@ -608,8 +612,7 @@ analyzer:
     enableSuperMixins : true
 ''');
 
-    AnalysisContext context = AnalysisEngine.instance.createAnalysisContext();
-    AnalysisOptions options = builder.getAnalysisOptions(context, path);
+    AnalysisOptions options = builder.getAnalysisOptions(path);
     _expectEqualOptions(options, expected);
   }
 
@@ -676,9 +679,9 @@ analyzer:
     expect(actual.analyzeFunctionBodiesPredicate,
         same(expected.analyzeFunctionBodiesPredicate));
     expect(actual.dart2jsHint, expected.dart2jsHint);
-    expect(actual.enableAssertMessage, expected.enableAssertMessage);
+    expect(actual.enableLazyAssignmentOperators,
+        expected.enableLazyAssignmentOperators);
     expect(actual.enableStrictCallChecks, expected.enableStrictCallChecks);
-    expect(actual.enableGenericMethods, expected.enableGenericMethods);
     expect(actual.enableSuperMixins, expected.enableSuperMixins);
     expect(actual.enableTiming, expected.enableTiming);
     expect(actual.generateImplicitErrors, expected.generateImplicitErrors);
@@ -724,29 +727,5 @@ class EmbedderYamlLocatorTest extends EmbedderRelatedTest {
       'fox': <Folder>[pathTranslator.getResource(foxLib)]
     });
     expect(locator.embedderYamls, hasLength(1));
-  }
-}
-
-class _TestOptionsProcessor implements OptionsProcessor {
-  Map<String, Object> expectedOptions = null;
-
-  int errorCount = 0;
-
-  @override
-  void onError(Exception exception) {
-    errorCount++;
-  }
-
-  @override
-  void optionsProcessed(AnalysisContext context, Map<String, Object> options) {
-    if (expectedOptions == null) {
-      fail('Unexpected invocation of optionsProcessed');
-    }
-    expect(options, hasLength(expectedOptions.length));
-    for (String key in expectedOptions.keys) {
-      expect(options.containsKey(key), isTrue, reason: 'missing key $key');
-      expect(options[key], expectedOptions[key],
-          reason: 'values for key $key do not match');
-    }
   }
 }

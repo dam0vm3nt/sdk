@@ -1,17 +1,79 @@
-## 1.21.0
+## 1.22.0
+
+### Tool changes
+
+* Pub
+
+  * Avoid using a barback asset server for executables unless they actually use
+    transformers. This makes precompilation substantially faster, produces
+    better error messages when precompilation fails, and allows
+    globally-activated executables to consistently use the
+    `Isolate.resolvePackageUri()` API.
+
+  * On POSIX systems, always ignore packages' original file owners and
+    permissions when extracting those packages. This was already the default
+    under most circumstances.
+
+  * Properly close the standard input stream of child processes started using
+    `pub run`.
+
+  * Handle parse errors from the package cache more gracefully. A package whose
+    pubspec can't be parsed will now be ignored by `pub get --offline` and
+    deleted by `pub cache repair`.
+
+## 1.21.0 - 2016-12-07
+
+### Language
+
+* Support generic method syntax. Type arguments are not available at
+  runtime. For details, check the
+  [informal specification](https://gist.github.com/eernstg/4353d7b4f669745bed3a5423e04a453c).
+* Support access to initializing formals, e.g., the use of `x` to initialize
+ `y` in `class C { var x, y; C(this.x): y = x; }`.
+  Please check the
+  [informal specification](https://gist.github.com/eernstg/cff159be9e34d5ea295d8c24b1a3e594)
+  for details.
+* Don't warn about switch case fallthrough if the case ends in a `rethrow`
+  statement.
+* Also don't warn if the entire switch case is wrapped in braces - as long as
+  the block ends with a `break`, `continue`, `rethrow`, `return` or `throw`.
+* Allow `=` as well as `:` as separator for named parameter default values.
+
 ### Core library changes
 
 * `dart:core`: `Set.difference` now takes a `Set<Object>` as argument.
 
-### Language
+* `dart:developer`
 
-* Allow `=` as well as `:` as separator for named parameter default values.
+  * Added `Service` class.
+    * Allows inspecting and controlling the VM service protocol HTTP server.
+    * Provides an API to access the ID of an `Isolate`.
+
+### Tool changes
+
+* Dart Dev Compiler
+
+  * Support calls to `loadLibrary()` on deferred libraries. Deferred libraries
+    are still loaded eagerly. (#27343)
 
 ## 1.20.1 - 2016-10-13
 
 Patch release, resolves one issue:
 
 * Dartium: Fixes a bug that caused crashes.  No issue filed
+
+### Strong Mode
+
+* It is no longer a warning when casting from dynamic to a composite type
+    (SDK issue [27766](https://github.com/dart-lang/sdk/issues/27766)).
+
+    ```dart
+    main() {
+      dynamic obj = <int>[1, 2, 3];
+      // This is now allowed without a warning.
+      List<int> list = obj;
+    }
+    ```
 
 ## 1.20.0 - 2016-10-11
 

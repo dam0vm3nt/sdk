@@ -11,9 +11,9 @@ namespace dart {
 
 class HashMap {
  public:
-  typedef bool (*MatchFun) (void* key1, void* key2);
+  typedef bool (*MatchFun)(void* key1, void* key2);
 
-  typedef void (*ClearFun) (void* value);
+  typedef void (*ClearFun)(void* value);
 
   // initial_capacity is the size of the initial hash map;
   // it must be a power of 2 (and thus must not be 0).
@@ -21,9 +21,7 @@ class HashMap {
 
   ~HashMap();
 
-  static bool SamePointerValue(void* key1, void* key2) {
-    return key1 == key2;
-  }
+  static bool SamePointerValue(void* key1, void* key2) { return key1 == key2; }
 
   static uint32_t StringHash(char* key) {
     uint32_t hash_ = 0;
@@ -63,6 +61,9 @@ class HashMap {
   Entry* Lookup(void* key, uint32_t hash, bool insert);
 
   // Removes the entry with matching key.
+  //
+  // WARNING: This method cannot be called while iterating a `HashMap`
+  // otherwise the iteration might step over elements!
   void Remove(void* key, uint32_t hash);
 
   // Empties the hash map (occupancy() == 0), and calls the function 'clear' on

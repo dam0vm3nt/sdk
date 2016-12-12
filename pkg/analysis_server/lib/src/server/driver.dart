@@ -9,7 +9,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:analysis_server/src/analysis_server.dart';
-import 'package:analysis_server/src/plugin/linter_plugin.dart';
 import 'package:analysis_server/src/plugin/server_plugin.dart';
 import 'package:analysis_server/src/provisional/completion/dart/completion_plugin.dart';
 import 'package:analysis_server/src/server/http_server.dart';
@@ -25,7 +24,7 @@ import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/incremental_logger.dart';
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:args/args.dart';
-import 'package:linter/src/plugin/linter_plugin.dart';
+import 'package:linter/src/rules.dart' as linter;
 import 'package:plugin/manager.dart';
 import 'package:plugin/plugin.dart';
 
@@ -243,6 +242,11 @@ class Driver implements ServerStarter {
       "incremental-resolution-validation";
 
   /**
+   * The name of the option used to enable using the new analysis driver.
+   */
+  static const String ENABLE_NEW_ANALYSIS_DRIVER = 'enable-new-analysis-driver';
+
+  /**
    * The name of the option used to enable using pub summary manager.
    */
   static const String ENABLE_PUB_SUMMARY_MANAGER = 'enable-pub-summary-manager';
@@ -269,6 +273,11 @@ class Driver implements ServerStarter {
    * console instead of being intercepted.
    */
   static const String INTERNAL_PRINT_TO_CONSOLE = "internal-print-to-console";
+
+  /**
+   * The name of the option used to describe the new analysis driver logger.
+   */
+  static const String NEW_ANALYSIS_DRIVER_LOG = 'new-analysis-driver-log';
 
   /**
    * The name of the flag used to disable error notifications.
@@ -383,15 +392,19 @@ class Driver implements ServerStarter {
         results[ENABLE_INCREMENTAL_RESOLUTION_API];
     analysisServerOptions.enableIncrementalResolutionValidation =
         results[INCREMENTAL_RESOLUTION_VALIDATION];
+    analysisServerOptions.enableNewAnalysisDriver =
+        results[ENABLE_NEW_ANALYSIS_DRIVER];
     analysisServerOptions.enablePubSummaryManager =
         results[ENABLE_PUB_SUMMARY_MANAGER];
     analysisServerOptions.finerGrainedInvalidation =
-        true /*results[FINER_GRAINED_INVALIDATION]*/;
+        results[FINER_GRAINED_INVALIDATION];
     analysisServerOptions.noErrorNotification = results[NO_ERROR_NOTIFICATION];
     analysisServerOptions.noIndex = results[NO_INDEX];
     analysisServerOptions.useAnalysisHighlight2 =
         results[USE_ANALISYS_HIGHLIGHT2];
     analysisServerOptions.fileReadMode = results[FILE_READ_MODE];
+    analysisServerOptions.newAnalysisDriverLog =
+        results[NEW_ANALYSIS_DRIVER_LOG];
 
     _initIncrementalLogger(results[INCREMENTAL_RESOLUTION_LOG]);
 
@@ -401,15 +414,12 @@ class Driver implements ServerStarter {
     ServerPlugin serverPlugin = new ServerPlugin();
     List<Plugin> plugins = <Plugin>[];
     plugins.addAll(AnalysisEngine.instance.requiredPlugins);
-    plugins.add(AnalysisEngine.instance.commandLinePlugin);
-    plugins.add(AnalysisEngine.instance.optionsPlugin);
     plugins.add(serverPlugin);
-    plugins.add(linterPlugin);
-    plugins.add(linterServerPlugin);
     plugins.add(dartCompletionPlugin);
     plugins.addAll(_userDefinedPlugins);
     ExtensionManager manager = new ExtensionManager();
     manager.processPlugins(plugins);
+    linter.registerLintRules();
 
     String defaultSdkPath;
     if (results[SDK_OPTION] != null) {
@@ -421,7 +431,8 @@ class Driver implements ServerStarter {
           .defaultSdkDirectory(PhysicalResourceProvider.INSTANCE)
           .path;
     }
-    bool useSummaries = analysisServerOptions.fileReadMode == 'as-is';
+    bool useSummaries = analysisServerOptions.fileReadMode == 'as-is' ||
+        analysisServerOptions.enableNewAnalysisDriver;
     // TODO(brianwilkerson) It would be nice to avoid creating an SDK that
     // cannot be re-used, but the SDK is needed to create a package map provider
     // in the case where we need to run `pub` in order to get the package map.
@@ -532,6 +543,10 @@ class Driver implements ServerStarter {
         help: "enable validation of incremental resolution results (slow)",
         defaultsTo: false,
         negatable: false);
+    parser.addFlag(ENABLE_NEW_ANALYSIS_DRIVER,
+        help: "enable using new analysis driver",
+        defaultsTo: false,
+        negatable: false);
     parser.addFlag(ENABLE_PUB_SUMMARY_MANAGER,
         help: "enable using summaries for pub cache packages",
         defaultsTo: false,
@@ -547,6 +562,8 @@ class Driver implements ServerStarter {
         help: "enable sending `print` output to the console",
         defaultsTo: false,
         negatable: false);
+    parser.addOption(NEW_ANALYSIS_DRIVER_LOG,
+        help: "set a destination for the new analysis driver's log");
     parser.addOption(PORT_OPTION,
         help: "the http diagnostic port on which the server provides"
             " status and performance information");

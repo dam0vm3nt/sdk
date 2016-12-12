@@ -69,6 +69,18 @@ main() {
   aFunction<Set>();
 }
 ''',
+  'dynamic_as_type_argument.dart': '''
+main() {
+  method<dynamic>();
+}
+method<T>() {}
+''',
+  'malformed_type_argument.dart': '''
+main() {
+  method<Unresolved>();
+}
+method<T>() {}
+''',
 };
 
 Future runTest(Uri main, {MessageKind warning, MessageKind info}) async {
@@ -84,7 +96,7 @@ Future runTest(Uri main, {MessageKind warning, MessageKind info}) async {
       outputProvider: output);
 
   Expect.isFalse(output.hasExtraOutput);
-  Expect.equals(0, diagnostics.errors.length);
+  Expect.equals(0, diagnostics.errors.length, "Unexpected errors.");
   Expect.equals(warning != null ? 1 : 0, diagnostics.warnings.length);
   if (warning != null) {
     Expect.equals(warning, diagnostics.warnings.first.message.kind);
@@ -105,5 +117,10 @@ void main() {
 
     await runTest(Uri.parse('memory:cannot_new_function_type_variable.dart'),
         warning: MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE);
+
+    await runTest(Uri.parse('memory:dynamic_as_type_argument.dart'));
+
+    await runTest(Uri.parse('memory:malformed_type_argument.dart'),
+        warning: MessageKind.CANNOT_RESOLVE_TYPE);
   });
 }

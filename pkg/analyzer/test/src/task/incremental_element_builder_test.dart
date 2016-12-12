@@ -5,6 +5,7 @@
 library analyzer.test.src.task.incremental_element_builder_test;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/visitor.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart';
@@ -711,6 +712,43 @@ class A {
     expect(helper.delta.removedMethods, unorderedEquals([oldElementA]));
   }
 
+  test_classDelta_method_async_addStar() {
+    var helper = new _ClassDeltaHelper('A');
+    _buildOldUnit(r'''
+class A {
+  Stream test() async {}
+}
+''');
+    helper.initOld(oldUnit);
+    _buildNewUnit(r'''
+class A {
+  Stream test() async* {}
+}
+''');
+    helper.initNew(newUnit, unitDelta);
+    // nodes
+    ClassMember oldNodeA = helper.oldMembers[0];
+    ClassMember newNodeA = helper.newMembers[0];
+    expect(newNodeA, isNot(same(oldNodeA)));
+    // elements
+    MethodElement oldElement = oldNodeA.element;
+    MethodElement newElement = newNodeA.element;
+    expect(newElement, isNotNull);
+    expect(newElement.name, 'test');
+    expect(oldElement.isAsynchronous, isTrue);
+    expect(oldElement.isGenerator, isFalse);
+    expect(newElement.isAsynchronous, isTrue);
+    expect(newElement.isGenerator, isTrue);
+    expect(helper.element.methods, [newElement]);
+    // verify delta
+    expect(helper.delta.addedConstructors, isEmpty);
+    expect(helper.delta.removedConstructors, isEmpty);
+    expect(helper.delta.addedAccessors, isEmpty);
+    expect(helper.delta.removedAccessors, isEmpty);
+    expect(helper.delta.addedMethods, unorderedEquals([newElement]));
+    expect(helper.delta.removedMethods, unorderedEquals([oldElement]));
+  }
+
   test_classDelta_method_changeName() {
     var helper = new _ClassDeltaHelper('A');
     _buildOldUnit(r'''
@@ -1207,7 +1245,9 @@ class A {}
     // Set the LibraryElement and check that its nameOffset is correct.
     libraryDirective.element =
         new LibraryElementImpl.forNode(context, libraryDirective.name);
-    expect(libraryDirective.element.nameOffset, libraryDirective.name.offset);
+    expect(
+        resolutionMap.elementDeclaredByDirective(libraryDirective).nameOffset,
+        libraryDirective.name.offset);
     // Update and check again that the nameOffset is correct.
     _buildNewUnit(r'''
 #!/bin/sh
@@ -1215,7 +1255,9 @@ class A {}
 library my_lib;
 class A {}
 ''');
-    expect(libraryDirective.element.nameOffset, libraryDirective.name.offset);
+    expect(
+        resolutionMap.elementDeclaredByDirective(libraryDirective).nameOffset,
+        libraryDirective.name.offset);
   }
 
   test_directives_remove() {
@@ -1313,8 +1355,10 @@ import 'test2.dart' as m;
 class A {}
 ''');
     int expectedPrefixOffset = 23;
-    expect(import1.prefix.staticElement.nameOffset, expectedPrefixOffset);
-    expect(import2.prefix.staticElement.nameOffset, expectedPrefixOffset);
+    expect(resolutionMap.staticElementForIdentifier(import1.prefix).nameOffset,
+        expectedPrefixOffset);
+    expect(resolutionMap.staticElementForIdentifier(import2.prefix).nameOffset,
+        expectedPrefixOffset);
     expect(importElement1.prefix.nameOffset, expectedPrefixOffset);
     expect(importElement2.prefix.nameOffset, expectedPrefixOffset);
   }
@@ -1491,7 +1535,11 @@ class C {}''');
       {
         var docReferences = newNode.documentationComment.references;
         expect(docReferences, hasLength(2));
-        expect(docReferences[0].identifier.staticElement.name, 'double');
+        expect(
+            resolutionMap
+                .staticElementForIdentifier(docReferences[0].identifier)
+                .name,
+            'double');
         expect(docReferences[1].identifier.staticElement,
             same(newNodes[2].element));
       }
@@ -1512,7 +1560,11 @@ class A {}''');
       {
         var docReferences = newNode.documentationComment.references;
         expect(docReferences, hasLength(1));
-        expect(docReferences[0].identifier.staticElement.name, 'bool');
+        expect(
+            resolutionMap
+                .staticElementForIdentifier(docReferences[0].identifier)
+                .name,
+            'bool');
       }
     }
     {
@@ -1531,7 +1583,11 @@ class B {}''');
       {
         var docReferences = newNode.documentationComment.references;
         expect(docReferences, hasLength(1));
-        expect(docReferences[0].identifier.staticElement.name, 'int');
+        expect(
+            resolutionMap
+                .staticElementForIdentifier(docReferences[0].identifier)
+                .name,
+            'int');
       }
     }
     // verify delta
@@ -2169,8 +2225,9 @@ class _BuiltElementsValidator extends AstComparator {
       AstNode parent = actual.parent;
       if (parent is Declaration) {
         ElementAnnotationImpl actualElement = actual.elementAnnotation;
-        CompilationUnitElement enclosingUnitElement =
-            parent.element.getAncestor((a) => a is CompilationUnitElement);
+        CompilationUnitElement enclosingUnitElement = resolutionMap
+            .elementDeclaredByDeclaration(parent)
+            .getAncestor((a) => a is CompilationUnitElement);
         expect(actualElement.compilationUnit, same(enclosingUnitElement));
       }
     }

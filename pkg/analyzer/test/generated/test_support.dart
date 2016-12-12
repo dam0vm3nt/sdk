@@ -99,8 +99,6 @@ class EngineTestCase {
   void setUp() {
     List<Plugin> plugins = <Plugin>[];
     plugins.addAll(AnalysisEngine.instance.requiredPlugins);
-    plugins.add(AnalysisEngine.instance.commandLinePlugin);
-    plugins.add(AnalysisEngine.instance.optionsPlugin);
     new ExtensionManager().processPlugins(plugins);
   }
 
@@ -242,7 +240,7 @@ class GatheringErrorListener implements AnalysisErrorListener {
    *           expected
    */
   void assertErrorsWithCodes(
-      [List<ErrorCode> expectedErrorCodes = ErrorCode.EMPTY_LIST]) {
+      [List<ErrorCode> expectedErrorCodes = const <ErrorCode>[]]) {
     StringBuffer buffer = new StringBuffer();
     //
     // Verify that the expected error codes have a non-empty message.

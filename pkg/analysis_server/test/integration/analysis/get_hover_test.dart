@@ -2,12 +2,10 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-library test.integration.analysis.get.hover;
-
 import 'dart:async';
 
 import 'package:analysis_server/plugin/protocol/protocol.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
 
@@ -16,11 +14,11 @@ import '../integration_tests.dart';
 main() {
   defineReflectiveSuite(() {
     defineReflectiveTests(AnalysisGetHoverIntegrationTest);
+    defineReflectiveTests(AnalysisGetHoverIntegrationTest_Driver);
   });
 }
 
-@reflectiveTest
-class AnalysisGetHoverIntegrationTest
+class AbstractAnalysisGetHoverIntegrationTest
     extends AbstractAnalysisServerIntegrationTest {
   /**
    * Pathname of the file containing Dart code.
@@ -78,7 +76,7 @@ main() {
       expect(info.offset, equals(offset));
       expect(info.length, equals(length));
       if (isCore) {
-        expect(basename(info.containingLibraryPath), equals('core.dart'));
+        expect(path.basename(info.containingLibraryPath), equals('core.dart'));
         expect(info.containingLibraryName, equals('dart.core'));
       } else if (isLocal || isLiteral) {
         expect(info.containingLibraryPath, isNull);
@@ -188,4 +186,15 @@ main() {
       return Future.wait(tests);
     });
   }
+}
+
+@reflectiveTest
+class AnalysisGetHoverIntegrationTest
+    extends AbstractAnalysisGetHoverIntegrationTest {}
+
+@reflectiveTest
+class AnalysisGetHoverIntegrationTest_Driver
+    extends AbstractAnalysisGetHoverIntegrationTest {
+  @override
+  bool get enableNewAnalysisDriver => true;
 }

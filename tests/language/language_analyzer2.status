@@ -156,9 +156,6 @@ regress_22438_test: fail # test issue 14079, it is not error, but warning to use
 # test issue 14228
 black_listed_test/none: fail # test issue 14228, warnings are required but not expected
 
-# test issue 14410, "typedef C = " is now really illegal syntax
-mixin_illegal_syntax_test/none: fail
-
 # test issue 14736, It is a static warning if a class C declares an instance method named n and has a setter named n=.
 setter4_test: StaticWarning
 
@@ -292,7 +289,6 @@ method_override5_test: StaticWarning
 method_override6_test: StaticWarning
 method_override_test: StaticWarning
 mixin_illegal_static_access_test: StaticWarning
-mixin_illegal_syntax_test/13: CompileTimeError
 mixin_type_parameters_mixin_extends_test: StaticWarning
 mixin_type_parameters_mixin_test: StaticWarning
 mixin_type_parameters_super_extends_test: StaticWarning
@@ -356,7 +352,6 @@ parameter_initializer1_negative_test: CompileTimeError
 parameter_initializer2_negative_test: CompileTimeError
 parameter_initializer3_negative_test: CompileTimeError
 parameter_initializer4_negative_test: CompileTimeError
-parameter_initializer5_negative_test: CompileTimeError
 parameter_initializer6_negative_test: CompileTimeError
 parser_quirks_test: StaticWarning
 part2_test: StaticWarning
@@ -498,14 +493,8 @@ for_in3_test: StaticWarning, OK # Test should have warning by design.
 for_in_side_effects_test: StaticWarning, OK # Test uses custom class that does not implement Iterable in for-in.
 
 # Experimental feature: Syntactic support for generic methods.
-generic_functions_test: CompileTimeError # Issue 25868
-generic_local_functions_test: CompileTimeError # Issue 25868
-generic_methods_test: CompileTimeError # Issue 25868
-generic_sends_test: CompileTimeError # Issue 25868
-generic_methods_new_test: CompiletimeError # Issue 25868
-generic_methods_function_type_test: CompiletimeError # Issue 25868
-generic_methods_type_expression_test: CompiletimeError # Issue 25868
-generic_methods_generic_function_parameter_test: CompiletimeError # Issue 25868
+generic_methods_type_expression_test: StaticWarning # Issue 25868
+generic_methods_generic_function_parameter_test: StaticWarning # Issue 25868
 
 # Experimental feature: Use initializing formals in initializers and constructor body.
 initializing_formal_type_test: StaticWarning # Issue 26658

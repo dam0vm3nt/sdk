@@ -14,6 +14,8 @@ js_typed_interop_type2_test: Fail, OK # tests dart2js-specific behavior.
 js_typed_interop_type3_test: Fail, OK # tests dart2js-specific behavior.
 
 native_gc_test: Skip # Dartium JSInterop failure
+js_interop_constructor_name_test/HTMLDivElement-methods: Fail # Investigate.
+js_interop_constructor_name_test/HTMLDivElement-types: Fail # ditto
 
 [ $compiler == none && ($runtime == drt || $runtime == dartium ) ]
 worker_api_test: Fail # Issue 10223
@@ -32,7 +34,8 @@ mirrors_js_typed_interop_test: Pass, Slow
 js_type_test/dynamic-null-not-Foo: Fail  # Issue 26838
 js_type_test/dynamic-String-not-Foo: Fail  # Issue 26838
 js_type_test/dynamic-String-not-dynamic-Foo: Fail  # Issue 26838
-
+js_interop_constructor_name_test/HTMLDivElement-types-erroneous1: Fail # Issue 26838
+js_interop_constructor_name_test/HTMLDivElement-types-erroneous2: Fail # Issue 26838
 
 [ $compiler == dart2js && $checked ]
 js_function_getter_trust_types_test: Skip # --trust-type-annotations incompatible with --checked
@@ -79,6 +82,9 @@ worker_test/functional: Pass, Crash # Issue 9929.
 fileapi_test/entry: Fail # TODO(dart2js-team): Please triage this failure.
 fileapi_test/getDirectory: Fail # TODO(dart2js-team): Please triage this failure.
 fileapi_test/getFile: Fail # TODO(dart2js-team): Please triage this failure.
+media_stream_test/supported_MediaStreamEvent: RuntimeError # Please triage.
+media_stream_test/supported_MediaStreamTrackEvent: RuntimeError # Please triage.
+speechrecognition_test/types: RuntimeError # Please triage.
 
 [ $compiler == dart2js && $runtime == chromeOnAndroid ]
 crypto_test/functional: Pass, Slow # TODO(dart2js-team): Please triage this failure.
@@ -350,7 +356,7 @@ websql_test/supported: Fail
 
 # 'html' tests import the HTML library, so they only make sense in
 # a browser environment.
-[ $runtime == vm || $runtime == dart_precompiled || $runtime == dart_app ]
+[ $runtime == vm || $runtime == dart_precompiled ]
 *: Skip
 
 [ $compiler == dart2js && ($runtime == drt || $runtime == ff) ]

@@ -6,6 +6,7 @@ library analyzer.test.constant_test;
 
 import 'package:analyzer/context/declared_variables.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/error/error.dart';
@@ -17,7 +18,7 @@ import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
 import 'package:analyzer/src/task/dart.dart';
 import 'package:path/path.dart';
@@ -1196,7 +1197,7 @@ const A a = const A();
   }
 
   void _assertProperDependencies(String sourceText,
-      [List<ErrorCode> expectedErrorCodes = ErrorCode.EMPTY_LIST]) {
+      [List<ErrorCode> expectedErrorCodes = const <ErrorCode>[]]) {
     Source source = addSource(sourceText);
     LibraryElement element = resolve2(source);
     CompilationUnit unit =
@@ -1407,10 +1408,10 @@ class A {
 @reflectiveTest
 class ConstantVisitorTest extends ResolverTestCase {
   void test_visitBinaryExpression_questionQuestion_notNull_notNull() {
-    Expression left = AstFactory.string2('a');
-    Expression right = AstFactory.string2('b');
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.string2('a');
+    Expression right = AstTestFactory.string2('b');
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1423,10 +1424,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitBinaryExpression_questionQuestion_null_notNull() {
-    Expression left = AstFactory.nullLiteral();
-    Expression right = AstFactory.string2('b');
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.nullLiteral();
+    Expression right = AstTestFactory.string2('b');
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1439,10 +1440,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitBinaryExpression_questionQuestion_null_null() {
-    Expression left = AstFactory.nullLiteral();
-    Expression right = AstFactory.nullLiteral();
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.nullLiteral();
+    Expression right = AstTestFactory.nullLiteral();
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1454,10 +1455,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_false() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(false), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(false), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1466,10 +1467,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonBooleanCondition() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    NullLiteral conditionExpression = AstFactory.nullLiteral();
-    ConditionalExpression expression = AstFactory.conditionalExpression(
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    NullLiteral conditionExpression = AstTestFactory.nullLiteral();
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
         conditionExpression, thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1481,10 +1482,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonConstantElse() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.identifier3("x");
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.identifier3("x");
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1495,10 +1496,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonConstantThen() {
-    Expression thenExpression = AstFactory.identifier3("x");
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.identifier3("x");
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1509,10 +1510,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_true() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1589,7 +1590,8 @@ const b = 3;''');
 
   DartObjectImpl _evaluateConstant(CompilationUnit compilationUnit, String name,
       Map<String, DartObjectImpl> lexicalEnvironment) {
-    Source source = compilationUnit.element.source;
+    Source source =
+        resolutionMap.elementDeclaredByCompilationUnit(compilationUnit).source;
     Expression expression =
         findTopLevelConstantExpression(compilationUnit, name);
     GatheringErrorListener errorListener = new GatheringErrorListener();

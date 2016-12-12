@@ -12,7 +12,6 @@ import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/file_system.dart' as file_system;
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
-import 'package:analyzer/plugin/options.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
 import 'package:analyzer/source/analysis_options_provider.dart';
 import 'package:analyzer/source/package_map_provider.dart';
@@ -30,6 +29,7 @@ import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/utilities_general.dart'
     show PerformanceTag;
+import 'package:analyzer/src/lint/registry.dart';
 import 'package:analyzer/src/services/lint.dart';
 import 'package:analyzer/src/source/source_resource.dart';
 import 'package:analyzer/src/summary/package_bundle_reader.dart';
@@ -41,7 +41,7 @@ import 'package:analyzer_cli/src/error_formatter.dart';
 import 'package:analyzer_cli/src/options.dart';
 import 'package:analyzer_cli/src/perf_report.dart';
 import 'package:analyzer_cli/starter.dart';
-import 'package:linter/src/plugin/linter_plugin.dart';
+import 'package:linter/src/rules.dart' as linter;
 import 'package:package_config/discovery.dart' as pkg_discovery;
 import 'package:package_config/packages.dart' show Packages;
 import 'package:package_config/packages_file.dart' as pkgfile show parse;
@@ -280,10 +280,6 @@ class Driver implements CommandLineStarter {
     if (options.disableHints != _previousOptions.disableHints) {
       return false;
     }
-    if (options.enableInitializingFormalAccess !=
-        _previousOptions.enableInitializingFormalAccess) {
-      return false;
-    }
     if (options.enableStrictCallChecks !=
         _previousOptions.enableStrictCallChecks) {
       return false;
@@ -415,6 +411,7 @@ class Driver implements CommandLineStarter {
     } else {
       // The embedder uri resolver has mappings, use it instead of the default
       // Dart SDK uri resolver.
+      embedderSdk.analysisOptions = _context.analysisOptions;
       resolvers.add(new DartUriResolver(embedderSdk));
     }
 
@@ -494,13 +491,6 @@ class Driver implements CommandLineStarter {
     // Create a context.
     _context = AnalysisEngine.instance.createAnalysisContext();
 
-    AnalyzeFunctionBodiesPredicate dietParsingPolicy =
-        _chooseDietParsingPolicy(options);
-    setAnalysisContextOptions(resourceProvider, _context, options,
-        (AnalysisOptionsImpl contextOptions) {
-      contextOptions.analyzeFunctionBodiesPredicate = dietParsingPolicy;
-    });
-
     // Find package info.
     _PackageInfo packageInfo = _findPackages(options);
 
@@ -530,6 +520,14 @@ class Driver implements CommandLineStarter {
     // the command-line options.
     SourceFactory sourceFactory = _chooseUriResolutionPolicy(
         options, embedderMap, packageInfo, summaryDataStore);
+
+    AnalyzeFunctionBodiesPredicate dietParsingPolicy =
+        _chooseDietParsingPolicy(options);
+    setAnalysisContextOptions(
+        resourceProvider, sourceFactory, _context, options,
+        (AnalysisOptionsImpl contextOptions) {
+      contextOptions.analyzeFunctionBodiesPredicate = dietParsingPolicy;
+    });
 
     _context.sourceFactory = sourceFactory;
     _context.resultProvider =
@@ -618,13 +616,12 @@ class Driver implements CommandLineStarter {
   void _processPlugins() {
     List<Plugin> plugins = <Plugin>[];
     plugins.addAll(AnalysisEngine.instance.requiredPlugins);
-    plugins.add(AnalysisEngine.instance.commandLinePlugin);
-    plugins.add(AnalysisEngine.instance.optionsPlugin);
-    plugins.add(linterPlugin);
     plugins.addAll(_userDefinedPlugins);
 
     ExtensionManager manager = new ExtensionManager();
     manager.processPlugins(plugins);
+
+    linter.registerLintRules();
   }
 
   /// Analyze a single source.
@@ -670,8 +667,6 @@ class Driver implements CommandLineStarter {
     contextOptions.trackCacheDependencies = false;
     contextOptions.disableCacheFlushing = options.disableCacheFlushing;
     contextOptions.hint = !options.disableHints;
-    contextOptions.enableInitializingFormalAccess =
-        options.enableInitializingFormalAccess;
     contextOptions.enableStrictCallChecks = options.enableStrictCallChecks;
     contextOptions.enableSuperMixins = options.enableSuperMixins;
     contextOptions.generateImplicitErrors = options.showPackageWarnings;
@@ -685,6 +680,7 @@ class Driver implements CommandLineStarter {
 
   static void setAnalysisContextOptions(
       file_system.ResourceProvider resourceProvider,
+      SourceFactory sourceFactory,
       AnalysisContext context,
       CommandLineOptions options,
       void configureContextOptions(AnalysisOptionsImpl contextOptions)) {
@@ -709,7 +705,7 @@ class Driver implements CommandLineStarter {
     context.analysisOptions = contextOptions;
 
     // Process analysis options file (and notify all interested parties).
-    _processAnalysisOptions(resourceProvider, context, options);
+    _processAnalysisOptions(resourceProvider, sourceFactory, context, options);
   }
 
   /// Perform a deep comparison of two string lists.
@@ -766,31 +762,25 @@ class Driver implements CommandLineStarter {
 
   static void _processAnalysisOptions(
       file_system.ResourceProvider resourceProvider,
+      SourceFactory sourceFactory,
       AnalysisContext context,
       CommandLineOptions options) {
     file_system.File file = _getOptionsFile(resourceProvider, options);
-    List<OptionsProcessor> optionsProcessors =
-        AnalysisEngine.instance.optionsPlugin.optionsProcessors;
-    try {
-      AnalysisOptionsProvider analysisOptionsProvider =
-          new AnalysisOptionsProvider();
-      Map<String, YamlNode> optionMap =
-          analysisOptionsProvider.getOptionsFromFile(file);
-      optionsProcessors.forEach(
-          (OptionsProcessor p) => p.optionsProcessed(context, optionMap));
 
-      // Fill in lint rule defaults in case lints are enabled and rules are
-      // not specified in an options file.
-      if (options.lints && !containsLintRuleEntry(optionMap)) {
-        setLints(context, linterPlugin.contributedRules);
-      }
+    AnalysisOptionsProvider analysisOptionsProvider =
+        new AnalysisOptionsProvider(sourceFactory);
+    Map<String, YamlNode> optionMap =
+        analysisOptionsProvider.getOptionsFromFile(file);
 
-      // Ask engine to further process options.
-      if (optionMap != null) {
-        configureContextOptions(context, optionMap);
-      }
-    } on Exception catch (e) {
-      optionsProcessors.forEach((OptionsProcessor p) => p.onError(e));
+    // Fill in lint rule defaults in case lints are enabled and rules are
+    // not specified in an options file.
+    if (options.lints && !containsLintRuleEntry(optionMap)) {
+      setLints(context, Registry.ruleRegistry.defaultRules);
+    }
+
+    // Ask engine to further process options.
+    if (optionMap != null) {
+      applyToAnalysisOptions(context.analysisOptions, optionMap);
     }
   }
 }

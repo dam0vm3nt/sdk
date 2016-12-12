@@ -9,7 +9,6 @@ import 'dart:core';
 
 import 'package:analyzer/context/declared_variables.dart';
 import 'package:analyzer/file_system/file_system.dart';
-import 'package:analyzer/plugin/options.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
 import 'package:analyzer/source/analysis_options_provider.dart';
 import 'package:analyzer/source/package_map_resolver.dart';
@@ -77,14 +76,12 @@ class ContextBuilder {
    * The resolver provider used to create a package: URI resolver, or `null` if
    * the normal (Package Specification DEP) lookup mechanism is to be used.
    */
-  @deprecated
   ResolverProvider packageResolverProvider;
 
   /**
    * The resolver provider used to create a file: URI resolver, or `null` if
    * the normal file URI resolver is to be used.
    */
-  @deprecated
   ResolverProvider fileResolverProvider;
 
   /**
@@ -104,7 +101,7 @@ class ContextBuilder {
   AnalysisContext buildContext(String path) {
     InternalAnalysisContext context =
         AnalysisEngine.instance.createAnalysisContext();
-    AnalysisOptions options = getAnalysisOptions(context, path);
+    AnalysisOptions options = getAnalysisOptions(path);
     context.contentCache = contentCache;
     context.sourceFactory = createSourceFactory(path, options);
     context.analysisOptions = options;
@@ -327,23 +324,30 @@ class ContextBuilder {
   }
 
   /**
-   * Return the analysis options that should be used when the given [context] is
-   * used to analyze code in the directory with the given [path].
+   * Return the analysis options that should be used to analyze code in the
+   * directory with the given [path].
    */
-  AnalysisOptions getAnalysisOptions(AnalysisContext context, String path) {
+  AnalysisOptions getAnalysisOptions(String path) {
     AnalysisOptionsImpl options = createDefaultOptions();
     File optionsFile = getOptionsFile(path);
     if (optionsFile != null) {
-      List<OptionsProcessor> optionsProcessors =
-          AnalysisEngine.instance.optionsPlugin.optionsProcessors;
+      // TODO(danrubel) restructure so that we don't recalculate the package map
+      // more than once per path.
+      Packages packages = createPackageMap(path);
+      Map<String, List<Folder>> packageMap = convertPackagesToMap(packages);
+      List<UriResolver> resolvers = <UriResolver>[
+        new ResourceUriResolver(resourceProvider),
+        new PackageMapUriResolver(resourceProvider, packageMap),
+      ];
+      SourceFactory sourceFactory =
+          new SourceFactory(resolvers, packages, resourceProvider);
       try {
         Map<String, YamlNode> optionMap =
-            new AnalysisOptionsProvider().getOptionsFromFile(optionsFile);
-        optionsProcessors.forEach(
-            (OptionsProcessor p) => p.optionsProcessed(context, optionMap));
+            new AnalysisOptionsProvider(sourceFactory)
+                .getOptionsFromFile(optionsFile);
         applyToAnalysisOptions(options, optionMap);
-      } on Exception catch (exception) {
-        optionsProcessors.forEach((OptionsProcessor p) => p.onError(exception));
+      } catch (_) {
+        // Ignore exceptions thrown while trying to load the options file.
       }
     }
     return options;

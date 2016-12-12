@@ -33,6 +33,8 @@ class WorldImpact {
 
   Iterable<TypeUse> get typeUses => const <TypeUse>[];
 
+  bool get isEmpty => true;
+
   void apply(WorldImpactVisitor visitor) {
     staticUses.forEach(visitor.visitStaticUse);
     dynamicUses.forEach(visitor.visitDynamicUse);
@@ -73,6 +75,18 @@ class WorldImpactBuilderImpl extends WorldImpact implements WorldImpactBuilder {
   Set<DynamicUse> _dynamicUses;
   Set<StaticUse> _staticUses;
   Set<TypeUse> _typeUses;
+
+  @override
+  bool get isEmpty =>
+      _dynamicUses == null && _staticUses == null && _typeUses == null;
+
+  /// Copy uses in [impact] to this impact builder.
+  void addImpact(WorldImpact impact) {
+    if (impact.isEmpty) return;
+    impact.dynamicUses.forEach(registerDynamicUse);
+    impact.staticUses.forEach(registerStaticUse);
+    impact.typeUses.forEach(registerTypeUse);
+  }
 
   void registerDynamicUse(DynamicUse dynamicUse) {
     assert(dynamicUse != null);
@@ -174,6 +188,14 @@ class TransformedWorldImpact implements WorldImpact, WorldImpactBuilder {
   TransformedWorldImpact(this.worldImpact);
 
   @override
+  bool get isEmpty {
+    return worldImpact.isEmpty &&
+        _staticUses == null &&
+        _typeUses == null &&
+        _dynamicUses == null;
+  }
+
+  @override
   Iterable<DynamicUse> get dynamicUses {
     return _dynamicUses != null ? _dynamicUses : worldImpact.dynamicUses;
   }
@@ -239,8 +261,8 @@ class ImpactUseCase {
 class ImpactStrategy {
   const ImpactStrategy();
 
-  /// Applies [impact] to [visitor] for the [impactUseCase] of [element].
-  void visitImpact(Element element, WorldImpact impact,
+  /// Applies [impact] to [visitor] for the [impactUseCase] of [impactSource].
+  void visitImpact(var impactSource, WorldImpact impact,
       WorldImpactVisitor visitor, ImpactUseCase impactUseCase) {
     // Apply unconditionally.
     impact.apply(visitor);

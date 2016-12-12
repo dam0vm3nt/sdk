@@ -103,7 +103,7 @@ jsAst.Statement buildSetupProgram(Program program, Compiler compiler,
     'staticsPropertyNameString': js.quoteName(namer.staticsPropertyName),
     'typeInformation': typeInformationAccess,
     'globalFunctions': globalFunctionsAccess,
-    'enabledInvokeOn': compiler.enabledInvokeOn,
+    'enabledInvokeOn': backend.hasInvokeOnSupport,
     'interceptedNames': interceptedNamesAccess,
     'interceptedNamesSet': emitter.generateInterceptedNamesSet(),
     'notInCspMode': !compiler.options.useContentSecurityPolicy,
@@ -138,7 +138,7 @@ jsAst.Statement buildSetupProgram(Program program, Compiler compiler,
         js.quoteName(namer.runtimeTypeName(compiler.coreClasses.objectClass)),
     'needsStructuredMemberInfo': emitter.needsStructuredMemberInfo,
     'usesMangledNames': compiler.commonElements.mirrorsLibrary != null ||
-        compiler.enabledFunctionApply,
+        backend.hasFunctionApplySupport,
     'tearOffCode': buildTearOffCode(backend),
     'nativeInfoHandler': nativeInfoHandler,
     'operatorIsPrefix': js.string(namer.operatorIsPrefix),
@@ -499,6 +499,7 @@ function $setupProgramName(programData, typesOffset) {
           chain = targetPrototype.#deferredAction;
         }
         return function foo() {
+          if (!supportsDirectProtoAccess) return;
           var prototype = this;
           // Find the actual prototype that this handler is installed on.
           while (!prototype.hasOwnProperty(#deferredActionString)) {

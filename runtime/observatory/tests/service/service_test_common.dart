@@ -157,7 +157,7 @@ Future<Isolate> hasPausedFor(Isolate isolate, String kind) {
   isolate.vm.getEventStream(VM.kDebugStream).then((stream) {
     var subscription;
     subscription = stream.listen((ServiceEvent event) {
-        if (event.kind == kind) {
+        if ((isolate == event.isolate) && (event.kind == kind)) {
           if (completer != null) {
             // Reload to update isolate.pauseEvent.
             print('Paused with $kind');
@@ -233,6 +233,10 @@ IsolateTest setBreakpointAtLine(int line) {
 IsolateTest stoppedAtLine(int line) {
   return (Isolate isolate) async {
     print("Checking we are at line $line");
+
+    // Make sure that the isolate has stopped.
+    isolate.reload();
+    expect(isolate.pauseEvent is! M.ResumeEvent, isTrue);
 
     ServiceMap stack = await isolate.getStack();
     expect(stack.type, equals('Stack'));

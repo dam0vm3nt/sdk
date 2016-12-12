@@ -23,7 +23,8 @@ main() async {
     }
   });
   asyncTest(() async {
-    analyze(uriList, {}, checkResults: checkResults, mode: AnalysisMode.MAIN);
+    await analyze(uriList, {},
+        checkResults: checkResults, mode: AnalysisMode.MAIN);
   });
 }
 
@@ -36,12 +37,16 @@ Set<String> whiteList = new Set.from([
 ]);
 
 bool checkResults(Compiler compiler, CollectingDiagnosticHandler handler) {
-  return compiler.enqueuer.resolution.processedElements
+  return compiler.enqueuer.resolution.processedEntities
       .every((Element element) {
     if (whiteList.contains("$element")) return true;
     LibraryInfo info = libraries[element.library.canonicalUri.path];
     bool isAllowedInEmbedded =
         info.isInternal || info.categories.contains(Category.embedded);
+    if (!isAllowedInEmbedded) {
+      print(
+          'Disallowed element: $element from ${element.library.canonicalUri}');
+    }
     return isAllowedInEmbedded;
   });
 }
