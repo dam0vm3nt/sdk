@@ -1,5 +1,5 @@
 name: dev_compiler
-version: 0.2.0-unofficial.2016122101
+version: 0.2.0-unofficial.2017020101
 description: >
   Experimental Dart to JavaScript compiler designed to create idiomatic,
   readable JavaScript output.
